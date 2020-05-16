@@ -21,6 +21,8 @@ make
 
 To make an individual game, use `make name-of-game` (substituting `name-of-game` for your desired game).
 
+Build artefacts (compiled object files) will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files.
+
 ## Usage
 
 Starting each game follows the same pattern. Below we will use `game` to generically refer to any of the game exectuables (substitute your desired game as appropriate).
@@ -40,21 +42,15 @@ Each game is turn-based, and will indicate when it is the given player's turn. N
 
 The collection has been designed in a modular way such that the connections and terminal drawing components can be reused. In particular the game uses very simple (blocking) stream communication between the clients and the server, designed for turn-based gameplay. Alongside this it employs the ncurses library to display the text-based graphics on the terminal.
 
-Documentation describing this functionality can be compiled:
+Documentation describing this functionality is available in the msg(3) and draw(3) manpages. Assuming you have `man` installed, these can be read with:
 
 ```sh
-make doc
-```
-
-This will create msg(3) and draw(3) manpages in a `man/` directory in the working directory. Assuming you have `man` installed, these can be read with:
-
-```sh
-man man/msg.3
-man man/draw.3
+man msg.3
+man draw.3
 ```
 
 Following this documentation and using existing game examples, it should be straightforward to write new games.
 
 ## License
 
-[MIT](.LICENSE)
+[MIT](./LICENSE)

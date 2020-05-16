@@ -4,17 +4,15 @@ CFLAGS=-g -O2 -pedantic -Wall -Werror
 .PHONY: all
 all: bin/echotest
 
-bin/echotest: echotest.o msg.o error.o
+bin/echotest: build/echotest.o build/msg.o build/error.o
 	mkdir -p bin
 	$(CC) -o $@ $^ $(CFLAGS)
 
-%.o: src/%.c
+build/%.o: src/%.c
+	mkdir -p build
 	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
-
-.PHONY: doc
-doc:
-	mkdir -p man
 
 .PHONY: clean
 clean:
-	rm -f *.o bin/echotest man/msg.3 man/draw.3
+	rm -f build/*.o bin/echotest
+	rmdir build bin
