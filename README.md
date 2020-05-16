@@ -1,5 +1,5 @@
 # psc
-> A collection of very simple multiplayer turn-based games. 
+> A collection of very simple multiplayer turn-based terminal games. 
 
 This collection was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support poor internet connections.
 
@@ -25,7 +25,7 @@ To make an individual game, use `make name-of-game` (substituting `name-of-game`
 
 Starting each game follows the same pattern. Below we will use `game` to generically refer to any of the game exectuables (substitute your desired game as appropriate).
 
-To start the host game with `N` other players using socket `/tmp/game_socket':
+To start the host game with `N` other players using socket `/tmp/game_socket`:
 ```sh
 game -h N /tmp/game_socket
 ```
