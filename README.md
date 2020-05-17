@@ -47,8 +47,8 @@ The collection has been designed in a modular way such that the connections and 
 Documentation describing this functionality is available in the msg(3) and draw(3) manpages. Assuming you have `man` installed, these can be read with:
 
 ```sh
-man msg.3
-man draw.3
+man -l msg.3
+man -l draw.3
 ```
 
 Following this documentation and using existing game examples, it should be straightforward to write new games.
