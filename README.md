@@ -1,7 +1,7 @@
 # psc
 > A collection of very simple multiplayer turn-based terminal games. 
 
-This collection was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support poor internet connections.
+This collection was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support low bandwidth/latency internet connections.
 
 [UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine).
 
@@ -25,7 +25,7 @@ Build artefacts (compiled object files) will be stored in a `build/` directory. 
 
 ## Usage
 
-Starting each game follows the same pattern. Below we will use `game` to generically refer to any of the game exectuables (substitute your desired game as appropriate).
+Starting each game follows the same pattern. Below we will use `game` to generically refer to any of the game executables (substitute your desired game as appropriate).
 
 To start the host game with `N` other players using socket `/tmp/game_socket`:
 ```sh
