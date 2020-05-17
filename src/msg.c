@@ -3,15 +3,21 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+#include <signal.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/select.h>
 #include "msg.h"
 #include "error.h"
 
 struct sockaddr_un addr;
 int nclient, sfd, *cfd;
-char path[SUN_PATH_MAX];
+char path[sizeof(addr.sun_path)];
 fd_set readfds;
+
+static void ssig(int);
+static void csig(int);
 
 /*
  * Start the server-side ipc.
@@ -24,8 +30,12 @@ void sstart(int nc, char *sp)
 	int i;
 	char welcome[1024];
 	
+	/* Register signal handler */
+	signal(SIGINT, ssig);
+	signal(SIGPIPE, ssig);
+	
 	nclient = nc;
-	strncpy(path, sp, SUN_PATH_MAX - 1);
+	strncpy(path, sp, sizeof(path) - 1);
 	printf("Server starting, expecting %d client(s)\n", nclient);
 
 	/* Allocate client sockets */
@@ -71,7 +81,7 @@ void sstart(int nc, char *sp)
 		printf("* Client %d connected!\n", i);
 		
 		/* Send welcome message */
-		strncpy(welcome, "[Server] Welcome!", sizeof(welcome));
+		strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
 		stoc(i, welcome, sizeof(welcome));
 	}
 }
@@ -85,7 +95,11 @@ void cstart(char *sp)
 {
 	char welcome[1024];
 	
-	strncpy(path, sp, SUN_PATH_MAX - 1);
+	/* Register signal handler */
+	signal(SIGINT, csig);
+	signal(SIGPIPE, csig);
+	
+	strncpy(path, sp, sizeof(path) - 1);
 	printf("Client starting\n");
 
 	/* Create socket */
@@ -122,11 +136,35 @@ void cstart(char *sp)
 ssize_t stoc(int client, void *msg, size_t len)
 {
 	ssize_t n;
+	char welcome[1024];
 	
 	if ((n = write(cfd[client], msg, len)) < 0)
 	{
-		perror("read error");
-		exit(-1);
+		if (errno == EPIPE) /* No reader at other end of pipe */
+		{
+			close(cfd[client]);
+			printf("Client connection closed, waiting for reconnection...\n");
+			
+			/* Wait for reconnection */
+			if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
+			{
+				perror("accept error");
+				exit(-1);
+			}
+			printf("* Client %d reconnected!\n", client);
+			
+			/* Send welcome message */
+			strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
+			stoc(client, welcome, sizeof(welcome));
+			
+			/* Continue as before, sending original message */
+			stoc(client, msg, len);		
+		}
+		else
+		{
+			perror("read error");
+			exit(-1);
+		}
 	}
 	return n;
 }
@@ -144,7 +182,10 @@ ssize_t ctos(void *msg, size_t len)
 	
 	if ((n = write(sfd, msg, len)) < 0)
 	{
-		perror("read error");
+		if (errno == EPIPE) /* No reader at other end of pipe */
+			printf("Server closed!\n");
+		else	
+			perror("read error");
 		exit(-1);
 	}
 	return n;
@@ -161,11 +202,34 @@ ssize_t ctos(void *msg, size_t len)
 ssize_t sfromc(int client, void *msg, size_t len)
 {
 	ssize_t n;
+	char welcome[1024];
 	
 	if ((n = read(cfd[client], msg, len)) < 0)
 	{
 		perror("read error");
 		exit(-1);
+	}
+	
+	if (n == 0) /* No writer at other end of pipe */
+	{
+		close(cfd[client]);
+		printf("Client connection closed, waiting for reconnection...\n");
+		
+		/* Wait for reconnection */
+		if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
+		{
+			perror("accept error");
+			exit(-1);
+		}
+		printf("* Client %d reconnected!\n", client);
+		
+		/* Send welcome message */
+		strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
+		stoc(client, welcome, sizeof(welcome));
+		
+		/* Continue as before, receiving message */
+		memset(msg, 0, len);
+		sfromc(client, msg, len);
 	}
 	return n;
 }
@@ -185,6 +249,12 @@ ssize_t cfroms(void *msg, size_t len)
 	if ((n = read(sfd, msg, len)) < 0)
 	{
 		perror("read error");
+		exit(-1);
+	}
+	
+	if (n == 0) /* Socket closed at server end */
+	{
+		printf("Server closed!\n");
 		exit(-1);
 	}
 	return n;
@@ -209,6 +279,7 @@ void sstop(void)
 	/* Close master socket */
 	close(sfd);
 	unlink(path);
+	printf("Server stopped.\n");
 }
 
 
@@ -219,4 +290,32 @@ void sstop(void)
 void cstop(void)
 {
 	close(sfd);
+	printf("Client stopped.\n");
+}
+
+/*
+ * Server-side signal handler.
+ * Note: should be registered before sstart().
+ */
+static void ssig(int sig)
+{
+	if (sig == SIGINT)
+	{
+		close(sfd);
+		unlink(path);
+		exit(-1);
+	}
+}
+
+/*
+ * Client-side signal handler.
+ * Note: should be registered before cstart().
+ */
+static void csig(int sig)
+{
+	if (sig == SIGINT)
+	{
+		close(sfd);
+		exit(-1);
+	}
 }

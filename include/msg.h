@@ -3,11 +3,6 @@
 
 #include <sys/types.h>
 
-enum
-{
-	SUN_PATH_MAX = 108,             /* Socket path size limit on Linux */
-};
-
 void    sstart(int, char*);         /* Start server-side ipc */
 void    cstart(char*);              /* Start client-side ipc */
 ssize_t stoc(int, void*, size_t);   /* Send msg from server to client */

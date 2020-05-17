@@ -17,11 +17,17 @@ void servermain(int nclient, char *path)
 	/* Start server and connect to clients */
 	sstart(nclient, path);
 	
-	/* Receive messages from connected clients */
-	for (i = 0; i < nclient; i++)
+	for (;;)
 	{
-		sfromc(i, msg, 1024);
-		printf("%s", msg);
+		/* Receive messages from connected clients */
+		for (i = 0; i < nclient; i++)
+		{
+			sfromc(i, msg, sizeof(msg));
+			printf("%s", msg);
+			
+			/* Echo message back */
+			stoc(i, msg, sizeof(msg));
+		}
 	}
 	
 	/* Stop server */
@@ -31,20 +37,27 @@ void servermain(int nclient, char *path)
 void clientmain(char *path)
 {
 	char msg[1024];
-
+	
 	/* Start client and connect to server */
 	cstart(path);
 	
-	/* Read a message from stdin to send to server */
-	printf("Please enter a message to send to the server:\n");
-	if (fgets(msg, sizeof(msg), stdin) == NULL)
+	for (;;)
 	{
-		perror("fgets error");
-		exit(-1);
+		/* Read a message from stdin to send to server */
+		printf("Please enter a message to send to the server:\n");
+		if (fgets(msg, sizeof(msg), stdin) == NULL)
+		{
+			perror("fgets error");
+			exit(-1);
+		}
+		
+		/* Send message to server */
+		ctos(msg, sizeof(msg));
+		
+		/* Receive echoed message back from server */
+		cfroms(msg, sizeof(msg));
+		printf("--> [Server] %s", msg);
 	}
-	
-	/* Send message to server */
-	ctos(msg, 1024);
 	
 	/* Stop client */
 	cstop();
@@ -54,7 +67,7 @@ int main(int argc, char **argv)
 {
 	int c, hflag, nclient;
 	
-	hflag = 0;
+	hflag = nclient = 0;
 	while ((c = getopt(argc, argv, "h:")) > 0)
 	{
 		switch(c)

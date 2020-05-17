@@ -36,7 +36,9 @@ You can confirm creation of the socket by examining your filesystem (in this exa
 game /tmp/socket
 ```
 
-Each game is turn-based, and will indicate when it is the given player's turn. Note that if a player quits, then the game will wait until a new player joins to fill their place. When the game is finished the socket will be unlinked.
+Each game is turn-based, and will indicate when it is the given player's turn. 
+
+Note that if a client game terminates then the host game will wait until a new player joins to fill their place. If the host game terminates then all the clients will also terminate. When the game is finished the socket will be unlinked.
 
 ## Writing new games
 
