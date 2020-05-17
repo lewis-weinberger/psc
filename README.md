@@ -7,7 +7,8 @@ This collection was created for playing multiplayer games either locally on the 
 
 ## Screenshots
 
-![todo](./screenshot.png)
+#### Blackjack
+![blackjack](./img/blackjack.gif)
 
 ## Installation
 
