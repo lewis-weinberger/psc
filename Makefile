@@ -2,7 +2,14 @@ CC=gcc
 CFLAGS=-g -O2 -pedantic -Wall -Werror
 
 .PHONY: all
-all: bin/echotest
+all: 
+
+.PHONY: test
+test: bin/echotest bin/drawtest
+
+bin/drawtest: build/drawtest.o build/draw.o build/error.o
+	mkdir -p bin
+	$(CC) -o $@ $^ $(CFLAGS) -lncurses -ltinfo
 
 bin/echotest: build/echotest.o build/msg.o build/error.o
 	mkdir -p bin
@@ -14,5 +21,4 @@ build/%.o: src/%.c
 
 .PHONY: clean
 clean:
-	rm -f build/*.o bin/echotest
-	rmdir build bin
+	rm -rf bin build
