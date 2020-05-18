@@ -33,7 +33,7 @@ void sstart(int nc, char *sp)
 	
 	nclient = nc;
 	strncpy(path, sp, sizeof(path) - 1);
-	printf("Server starting, expecting %d client(s)\n", nclient);
+	eprintf("Server starting, expecting %d client(s)\n", nclient);
 
 	/* Allocate client sockets */
 	cfd = emalloc(nclient * sizeof(int));
@@ -50,20 +50,20 @@ void sstart(int nc, char *sp)
 	unlink(path);
 	if (bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
 		ehandler("bind error");
-	printf("* Listening on socket: %s\n", path);
+	eprintf("* Listening on socket: %s\n", path);
 
 	/* Specify maximum number of connections */
 	if (listen(sfd, nclient) < 0)
 		ehandler("listen error");
 
 	/* Wait for all connections */
-	printf("* Waiting for client connections...\n");
+	eprintf("* Waiting for client connections...\n");
 	for (i = 0; i < nclient; i++)
 	{
 		/* Accept any incoming connection on master socket */
 		if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
 			ehandler("accept error");
-		printf("* Client %d connected!\n", i);
+		eprintf("* Client %d connected!\n", i);
 		
 		/* Send welcome message */
 		strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
@@ -85,7 +85,7 @@ void cstart(char *sp)
 	estart(NULL);
 	
 	strncpy(path, sp, sizeof(path) - 1);
-	printf("Client starting\n");
+	eprintf("Client starting\n");
 
 	/* Create socket */
 	if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
@@ -98,11 +98,11 @@ void cstart(char *sp)
 	if (connect(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
 		ehandler("connect error");
 
-	printf("* Connected to: %s\n", path);
+	eprintf("* Connected to: %s\n", path);
 	
 	/* Read welcome message from server */
 	cfroms(welcome, sizeof(welcome));
-	printf("%s\n", welcome);
+	eprintf("%s\n", welcome);
 }
 
 /*
@@ -123,12 +123,12 @@ ssize_t stoc(int client, void *msg, size_t len)
 		if (errno == EPIPE) /* No reader at other end of pipe */
 		{
 			close(cfd[client]);
-			printf("Client connection closed, waiting for reconnection...\n");
+			eprintf("Client connection closed, waiting for reconnection...\n");
 			
 			/* Wait for reconnection */
 			if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
 				ehandler("accept error");
-			printf("* Client %d reconnected!\n", client);
+			eprintf("* Client %d reconnected!\n", client);
 			
 			/* Send welcome message */
 			strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
@@ -183,12 +183,12 @@ ssize_t sfromc(int client, void *msg, size_t len)
 	if (n == 0) /* No writer at other end of pipe */
 	{
 		close(cfd[client]);
-		printf("Client connection closed, waiting for reconnection...\n");
+		eprintf("Client connection closed, waiting for reconnection...\n");
 		
 		/* Wait for reconnection */
 		if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
 			ehandler("accept error");
-		printf("* Client %d reconnected!\n", client);
+		eprintf("* Client %d reconnected!\n", client);
 		
 		/* Send welcome message */
 		strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
@@ -238,7 +238,7 @@ void sstop(void)
 	/* Close master socket */
 	close(sfd);
 	unlink(path);
-	printf("Server stopped.\n");
+	eprintf("Server stopped.\n");
 }
 
 
@@ -249,5 +249,5 @@ void sstop(void)
 void cstop(void)
 {
 	close(sfd);
-	printf("Client stopped.\n");
+	eprintf("Client stopped.\n");
 }

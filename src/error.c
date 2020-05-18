@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #include "error.h"
 
 ehandler_ptr ehandler;
@@ -46,4 +47,18 @@ void* emalloc(size_t len)
 	if ((p = malloc(len)) == NULL)
 		ehandler("malloc error");
 	return p;
+}
+
+/*
+ * Print to stderr.
+ */
+int eprintf(const char *format, ...)
+{
+	int ret;
+	va_list args;
+	
+	va_start(args, format);
+	ret = vfprintf(stderr, format, args);
+	va_end(args);
+	return ret;
 }

@@ -6,6 +6,8 @@
 #include "error.h"
 
 int winx, winy;
+int oldwinx, oldwiny;
+int winchanged = 0;
 
 /*
  * Initialise the terminal for drawing.
@@ -46,7 +48,14 @@ void dloop(long tick, int (*g)(void), int (*f)(int key))
 		gettimeofday(&start, NULL);
 		
 		/* Current window size */
+		oldwinx = winx;
+		oldwiny = winy;
 		getmaxyx(stdscr, winy, winx);
+		if (winx != oldwinx || winy != oldwiny)
+			winchanged = 1;
+		else
+			winchanged = 0;
+		
 
 		if (g() < 0)
 			break;
@@ -67,6 +76,14 @@ void dloop(long tick, int (*g)(void), int (*f)(int key))
 		if (dt.tv_sec * G + dt.tv_nsec > 0)
 			nanosleep(&dt, NULL);
 	}
+}
+
+/*
+ * Check if terminal has been resized between loops.
+ */
+int dresized(void)
+{
+	return winchanged;
 }
 
 /*
