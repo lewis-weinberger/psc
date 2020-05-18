@@ -24,6 +24,8 @@ To make an individual game, use `make name-of-game` (substituting `name-of-game`
 
 Build artefacts (compiled object files) will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files.
 
+See [INSTALL](./INSTALL.md) for hints on installing for different platforms.
+
 ## Usage
 
 Starting each game follows the same pattern. Below we will use `game` to generically refer to any of the game executables (substitute your desired game as appropriate).
@@ -34,7 +36,7 @@ game -h N /tmp/game_socket
 ```
 You can confirm creation of the socket by examining your filesystem (in this example, `ls /tmp` would show the created socket file). The remaining players can then join this game:
 ```sh
-game /tmp/socket
+game /tmp/game_socket
 ```
 
 Each game is turn-based, and will indicate when it is the given player's turn. 
@@ -43,7 +45,7 @@ Note that if a client game terminates then the host game will wait until a new p
 
 ## Writing new games
 
-The collection has been designed in a modular way such that the connections and terminal drawing components can be reused. In particular the game uses very simple (blocking) stream communication between the clients and the server, designed for turn-based gameplay. Alongside this it employs the ncurses library to display the text-based graphics on the terminal.
+The collection has been designed in a modular way such that the connections and terminal drawing components can be reused. In particular the game uses very simple (blocking) stream communication between the clients and the server, designed for turn-based gameplay. Alongside this, games employ the ncurses library to display text-based graphics on the terminal.
 
 Documentation describing this functionality is available in the msg(3) and draw(3) manpages. Assuming you have `man` installed, these can be read with:
 
@@ -52,7 +54,18 @@ man -l msg.3
 man -l draw.3
 ```
 
-Following this documentation and using existing game examples, it should be straightforward to write new games.
+Following this documentation and using existing game examples, it should (hopefully) be straightforward to write new games.
+
+### Planned games
+
+The following games are being written for the collection:
+- [ ] [Blackjack](https://en.wikipedia.org/wiki/Blackjack): 2+ players
+- [ ] [Labyrinth](https://en.wikipedia.org/wiki/Labyrinth_(paper-and-pencil_game)): 3+ players
+- [ ] [Sternhalma](https://en.wikipedia.org/wiki/Chinese_checkers): 2, 3, 4 or 6 players
+- [ ] [Go](https://en.wikipedia.org/wiki/Go_(game)): 2 players
+- [ ] [Chess](https://en.wikipedia.org/wiki/Chess): 2 players
+
+See also [this list of abstract strategy games](https://en.wikipedia.org/wiki/List_of_abstract_strategy_games).
 
 ## License
 
