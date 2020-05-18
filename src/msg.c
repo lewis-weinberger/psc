@@ -3,8 +3,8 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
-#include <signal.h>
 #include <errno.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
@@ -15,9 +15,6 @@ struct sockaddr_un addr;
 int nclient, sfd, *cfd;
 char path[sizeof(addr.sun_path)];
 fd_set readfds;
-
-static void ssig(int);
-static void csig(int);
 
 /*
  * Start the server-side ipc.
@@ -30,9 +27,9 @@ void sstart(int nc, char *sp)
 	int i;
 	char welcome[1024];
 	
-	/* Register signal handler */
-	signal(SIGINT, ssig);
-	signal(SIGPIPE, ssig);
+	/* Initialise error handling */
+	signal(SIGPIPE, SIG_IGN);
+	estart(NULL);
 	
 	nclient = nc;
 	strncpy(path, sp, sizeof(path) - 1);
@@ -44,10 +41,7 @@ void sstart(int nc, char *sp)
 
 	/* Create socket */
 	if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-	{
-		perror("socket error");
-		exit(-1);
-	}
+		ehandler("socket error");
 
 	/* Bind socket to path */
 	memset(&addr, 0, sizeof(addr));
@@ -55,18 +49,12 @@ void sstart(int nc, char *sp)
 	strncpy(addr.sun_path, path, sizeof(addr.sun_path));
 	unlink(path);
 	if (bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-	{
-		perror("bind error");
-		exit(-1);
-	}
+		ehandler("bind error");
 	printf("* Listening on socket: %s\n", path);
 
 	/* Specify maximum number of connections */
 	if (listen(sfd, nclient) < 0)
-	{
-		perror("listen error");
-		exit(-1);
-	}
+		ehandler("listen error");
 
 	/* Wait for all connections */
 	printf("* Waiting for client connections...\n");
@@ -74,10 +62,7 @@ void sstart(int nc, char *sp)
 	{
 		/* Accept any incoming connection on master socket */
 		if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
-		{
-			perror("accept error");
-			exit(-1);
-		}
+			ehandler("accept error");
 		printf("* Client %d connected!\n", i);
 		
 		/* Send welcome message */
@@ -95,29 +80,24 @@ void cstart(char *sp)
 {
 	char welcome[1024];
 	
-	/* Register signal handler */
-	signal(SIGINT, csig);
-	signal(SIGPIPE, csig);
+	/* Initialise error handling */
+	signal(SIGPIPE, SIG_IGN);
+	estart(NULL);
 	
 	strncpy(path, sp, sizeof(path) - 1);
 	printf("Client starting\n");
 
 	/* Create socket */
 	if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-	{
-		perror("socket error");
-		exit(-1);
-	}
+		ehandler("socket error");
 	
 	/* Connect to server */
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	strncpy(addr.sun_path, path, sizeof(addr.sun_path));
 	if (connect(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-	{
-		perror("connect error");
-		exit(-1);
-	}
+		ehandler("connect error");
+
 	printf("* Connected to: %s\n", path);
 	
 	/* Read welcome message from server */
@@ -147,10 +127,7 @@ ssize_t stoc(int client, void *msg, size_t len)
 			
 			/* Wait for reconnection */
 			if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
-			{
-				perror("accept error");
-				exit(-1);
-			}
+				ehandler("accept error");
 			printf("* Client %d reconnected!\n", client);
 			
 			/* Send welcome message */
@@ -161,10 +138,7 @@ ssize_t stoc(int client, void *msg, size_t len)
 			stoc(client, msg, len);		
 		}
 		else
-		{
-			perror("read error");
-			exit(-1);
-		}
+			ehandler("read error");
 	}
 	return n;
 }
@@ -183,10 +157,9 @@ ssize_t ctos(void *msg, size_t len)
 	if ((n = write(sfd, msg, len)) < 0)
 	{
 		if (errno == EPIPE) /* No reader at other end of pipe */
-			printf("Server closed!\n");
+			ehandler("Server closed");
 		else	
-			perror("read error");
-		exit(-1);
+			ehandler("read error");
 	}
 	return n;
 }
@@ -205,10 +178,7 @@ ssize_t sfromc(int client, void *msg, size_t len)
 	char welcome[1024];
 	
 	if ((n = read(cfd[client], msg, len)) < 0)
-	{
-		perror("read error");
-		exit(-1);
-	}
+		ehandler("read error");
 	
 	if (n == 0) /* No writer at other end of pipe */
 	{
@@ -217,10 +187,7 @@ ssize_t sfromc(int client, void *msg, size_t len)
 		
 		/* Wait for reconnection */
 		if ((cfd[client] = accept(sfd, NULL, NULL)) < 0)
-		{
-			perror("accept error");
-			exit(-1);
-		}
+			ehandler("accept error");
 		printf("* Client %d reconnected!\n", client);
 		
 		/* Send welcome message */
@@ -247,16 +214,10 @@ ssize_t cfroms(void *msg, size_t len)
 	ssize_t n;
 	
 	if ((n = read(sfd, msg, len)) < 0)
-	{
-		perror("read error");
-		exit(-1);
-	}
+		ehandler("read error");
 	
 	if (n == 0) /* Socket closed at server end */
-	{
-		printf("Server closed!\n");
-		exit(-1);
-	}
+		ehandler("Server closed");
 	return n;
 }
 
@@ -271,9 +232,7 @@ void sstop(void)
 	
 	/* Close connections to clients */
 	for (i = 0; i < nclient; i++)
-	{
 		close(cfd[i]);
-	}
 	free(cfd);
 	
 	/* Close master socket */
@@ -291,31 +250,4 @@ void cstop(void)
 {
 	close(sfd);
 	printf("Client stopped.\n");
-}
-
-/*
- * Server-side signal handler.
- * Note: should be registered before sstart().
- */
-static void ssig(int sig)
-{
-	if (sig == SIGINT)
-	{
-		close(sfd);
-		unlink(path);
-		exit(-1);
-	}
-}
-
-/*
- * Client-side signal handler.
- * Note: should be registered before cstart().
- */
-static void csig(int sig)
-{
-	if (sig == SIGINT)
-	{
-		close(sfd);
-		exit(-1);
-	}
 }

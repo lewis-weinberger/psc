@@ -13,6 +13,7 @@ int winx, winy;
  */
 void dstart(void)
 {
+	estart(NULL);
 	setlocale(LC_ALL, "");
 	initscr();
 	cbreak();
