@@ -2,10 +2,11 @@
 #include <stdio.h>
 #include <unistd.h>
 #include "msg.h"
+#include "error.h"
 
 void usage(char *cmd)
 {
-	printf("usage: %s [-h nclient] path\n", cmd);
+	eprintf("usage: %s [-h nclient] path\n", cmd);
 	exit(-1);
 }
 
@@ -46,10 +47,7 @@ void clientmain(char *path)
 		/* Read a message from stdin to send to server */
 		printf("Please enter a message to send to the server:\n");
 		if (fgets(msg, sizeof(msg), stdin) == NULL)
-		{
-			perror("fgets error");
-			exit(-1);
-		}
+			ehandler("fgets error");
 		
 		/* Send message to server */
 		ctos(msg, sizeof(msg));
