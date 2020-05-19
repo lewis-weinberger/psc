@@ -12,9 +12,7 @@ enum
 {
 	PLAYERS_MAX = 8,
 	CARDS_MAX = 52,
-	TICK_TIME = 100,
-	HIT = 1,
-	STAND = 2,
+	TICK_TIME = 50,
 	QUIT = -1,
 };
 
@@ -22,15 +20,17 @@ enum
 struct game
 {
 	int  nplayers;
+	int  current;
+	int  finish;
 	char names[PLAYERS_MAX][20];
 	char hands[PLAYERS_MAX][CARDS_MAX+1];
 	int  scores[PLAYERS_MAX];
 	char deck[CARDS_MAX+1];
 };
-typedef struct game game;
 
-int plid, ustand, uhit;
+typedef struct game game;
 game state;
+int plid, uhit, ustand, previous, turn, finished;
 const char cards[52] = { 'A', 'A', 'A', 'A',
                          '2', '2', '2', '2',
                          '3', '3', '3', '3',
@@ -70,15 +70,27 @@ int score(char *hand)
 	return ret;
 }
 
+void drawcard(int plid, int n)
+{
+	int c, b;
+	
+	c = strlen(state.deck);
+	b = rand() % c;
+	state.hands[plid][n] = state.deck[b];
+	state.deck[b] = state.deck[c - 1];
+	state.deck[c - 1] = '\0';
+}
+
 void deal(void)
 {
-	int i, j, b, c, pool[52];
+	int i, j, b, pool[52];
 	
 	srand(time(0));
 	
 	/* Initialise game state */
 	memset(state.hands, '\0', sizeof(state.hands));
 	memset(state.deck, '\0', sizeof(state.deck));
+	state.finish = state.current = turn = 0;
 	
 	/* Shuffle deck */
 	for (i = 0; i < 52; i++)
@@ -102,14 +114,11 @@ void deal(void)
 	{
 		for (j = 0; j < 2; j++)
 		{
-			c = strlen(state.deck);
-			b = rand() % c;
-			state.hands[i][j] = state.deck[b];
-			state.deck[b] = state.deck[c - 1];
-			state.deck[c - 1] = '\0';
+			drawcard(i, j);
 		}
 		state.scores[i] = score(state.hands[i]);
 	}
+	previous = strlen(state.deck);
 }
 
 void printcard(int y, int x, char card)
@@ -141,132 +150,148 @@ void printdeal(void)
 	/* Draw a nice border */
 	border('|', '|', '-', '-', '+', '+', '+', '+');
 	
+	/* Draw title and info */
+	if (state.current == plid)
+		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick.");
+	else
+		mvaddstr(1, 1, "BLACKJACK");
+		
+	if (state.scores[plid] > 21)
+		mvaddstr(1, 1, "BLACKJACK    > BUST!!!                                      ");
+		
 	/* Print the dealt hands */
 	for (i = 0; i < state.nplayers; i++)
 	{
-		mvaddstr(2 + 4*i, 2, state.names[i]);
+		mvaddstr(4 + 4*i, 2, state.names[i]);
 		if (i == state.nplayers - 1 && plid != state.nplayers - 1)
 			snprintf(score, sizeof(score), "[?]");
 		else
 			snprintf(score, sizeof(score), "[%d]", state.scores[i]);
-		mvaddstr(2 + 4*i, 2 + strlen(state.names[i]), score);
+		mvaddstr(4 + 4*i, 2 + strlen(state.names[i]), score);
 		for(j = 0; j < strlen(state.hands[i]); j++)
 		{
 			if (j == 0 && i == state.nplayers - 1 && plid != state.nplayers - 1)
-				printcard(1 + 4*i, 7 + strlen(state.names[i]) + 5*j, ' ');
+				printcard(3 + 4*i, 7 + strlen(state.names[i]) + 5*j, ' ');
 			else
-				printcard(1 + 4*i, 7 + strlen(state.names[i]) + 5*j, state.hands[i][j]);
+				printcard(3 + 4*i, 7 + strlen(state.names[i]) + 5*j, state.hands[i][j]);
 		}
 	}
 }
 
-int splayerg(void)
+int dealer(void)
 {
-	if (dresized())
-		printdeal();
-	return 0;
-}
-
-int sdealerg(void)
-{
-	int i, hit, c, b, j;
+	int i, ready, hit;
 	
-	if (dresized())
+	if (dresized() || strlen(state.deck) != previous || state.current != turn)
 		printdeal();
 		
-	/* Receive player decisions */
+	if (finished)
+		return 0;
+
+	/* Send game state to players */
+	previous = strlen(state.deck);
+	turn = state.current;
 	for (i = 0; i < state.nplayers - 1; i++)
-	{
-		sfromc(i, &hit, sizeof(hit));
 		stoc(i, &state, sizeof(state));
-		while (hit)
+		
+	if (state.finish)
+	{
+		finished = 1;
+		return 0;
+	}
+
+	if (state.current == plid) /* Process dealer's turn */
+	{
+		/* Check if bust */
+		if (state.scores[plid] > 21)
+		{
+			ustand = 1;
+			uhit = 0;
+		}
+		
+		if (uhit)
 		{
 			/* Draw new card */
-			j = strlen(state.hands[i]);
-			c = strlen(state.deck);
-			b = rand() % c;
-			state.hands[i][j] = state.deck[b];
-			state.deck[b] = state.deck[c - 1];
-			state.deck[c - 1] = '\0';
-			state.scores[i] = score(state.hands[i]);
-			
-			/* Send state back to player */
-			stoc(i, &state, sizeof(state));
-			
-			/* Wait for next move */
-			if (state.scores[i] <= 21)
-				sfromc(i, &hit, sizeof(hit));
+			drawcard(state.current, strlen(state.hands[state.current]));
+			state.scores[state.current] = score(state.hands[state.current]);
+		}
+		else if (ustand)
+			state.finish = 1;
+	}
+	else
+	{
+		/* Check if current player is ready */
+		sfromc(state.current, &ready, sizeof(ready));
+		if (ready)
+		{
+			/* Check if they hit or stand */
+			sfromc(state.current, &hit, sizeof(hit));
+			if (hit)
+			{
+				/* Draw new card */
+				drawcard(state.current, strlen(state.hands[state.current]));
+				state.scores[state.current] = score(state.hands[state.current]);
+			}
 			else
-				hit = 0;
+				state.current++;
 		}
 	}
 	return 0;
 }
 
-int splayerf(int key)
+int player(void)
 {
-	/* Process user input */
-	switch (key)
-	{
-		case 'q':
-		case 'Q':
-			return QUIT;
-		default:
-			break;
-	}
-	return 0;
-}
-
-int sdealerf(int key)
-{
-	/* Process user input */
-	switch (key)
-	{
-		case 'q':
-		case 'Q':
-			return QUIT;
-		case 'h':
-		case 'H':
-			uhit = 1;
-			break;
-		case 's':
-		case 'S':
-			ustand = 1;
-			break;
-		default:
-			break;
-	}
-	return 0;
-}
-
-int cplayerg(void)
-{
-	int a, b;
-	a = 1;
-	b = 0;
+	int ready, z;
 	
-	if (dresized())
+	if (dresized() || strlen(state.deck) != previous || state.current != turn)
 		printdeal();
 		
-	if (uhit && state.scores[plid] <= 21)
+	if (finished)
+		return 0;
+		
+	/* Receive current game state */
+	previous = strlen(state.deck);
+	turn = state.current;
+	cfroms(&state, sizeof(state));
+	
+	if (state.finish)
 	{
-		ctos(&a, sizeof(int));
-		cfroms(&state, sizeof(state));
-		printdeal();
-		uhit = 0;
+		finished = 1;
+		return 0;
 	}
-	else if (ustand)
+	
+	/* Check if it's our turn */
+	if (state.current == plid)
 	{
-		ctos(&b, sizeof(int));
-		cfroms(&state, sizeof(state));
-		printdeal();
-		ustand = 0;
+		/* Check if bust */
+		if (state.scores[plid] > 21)
+		{
+			ustand = 1;
+			uhit = 0;
+		}
+			
+		/* Let server know when ready */
+		ready = uhit || ustand;
+		ctos(&ready, sizeof(ready));
+	
+		if (uhit) /* Hit for another card */
+		{
+			z = 1;
+			ctos(&z, sizeof(z));
+			uhit = 0;
+		}
+		else if (ustand) /* Stand with current hand */
+		{
+			z = 0;
+			ctos(&z, sizeof(z));
+			ustand = 0;
+		}
 	}
 
 	return 0;
 }
 
-int cplayerf(int key)
+int input(int key)
 {
 	/* Process user input */
 	switch (key)
@@ -287,6 +312,7 @@ int cplayerf(int key)
 	}
 	return 0;
 }
+
 
 void sehandler(const char *message)
 {
@@ -317,9 +343,7 @@ void servermain(int nclient, char *path)
 	
 	/* Receive player names */
 	for (i = 0; i < nclient; i++)
-	{
 		sfromc(i, state.names[i], sizeof(state.names[i]));
-	}
 
 	/* Deal out cards */
 	deal();
@@ -335,11 +359,8 @@ void servermain(int nclient, char *path)
 	dstart();
 	printdeal();
 	
-	/* Process players' turns */
-	dloop(TICK_TIME, splayerg, splayerf);
-	
-	/* Process dealer's turn */
-	dloop(TICK_TIME, sdealerg, sdealerf);
+	/* Process turns */
+	dloop(TICK_TIME, dealer, input);
 	
 	/* Clean-up */
 	dstop();
@@ -369,7 +390,7 @@ void clientmain(char *path)
 	printdeal();
 	
 	/* Player's turn */
-	dloop(TICK_TIME, cplayerg, cplayerf);
+	dloop(TICK_TIME, player, input);
 	
 	/* Clean-up */
 	dstop();
@@ -386,7 +407,7 @@ int main(int argc, char **argv)
 {
 	int c, hflag, nclient;
 	
-	hflag = nclient = ustand = uhit = 0;
+	hflag = nclient = ustand = uhit = finished = 0;
 	while ((c = getopt(argc, argv, "h:")) > 0)
 	{
 		switch(c)
