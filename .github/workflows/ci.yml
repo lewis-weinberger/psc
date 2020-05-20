@@ -1,0 +1,21 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-18.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: install ncurses
+      run: sudo apt-get install lib32ncurses5 lib32ncurses5-dev
+    - name: make test applications
+      run: make test
+    - name: make
+      run: make
