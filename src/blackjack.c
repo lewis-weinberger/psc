@@ -29,8 +29,8 @@ struct game
 };
 
 typedef struct game game;
-game state;
-int plid, uhit, ustand, previous, turn, finished;
+game state, previous;
+int plid, uhit, ustand, finished;
 const char cards[52] = { 'A', 'A', 'A', 'A',
                          '2', '2', '2', '2',
                          '3', '3', '3', '3',
@@ -45,7 +45,37 @@ const char cards[52] = { 'A', 'A', 'A', 'A',
                          'Q', 'Q', 'Q', 'Q',
                          'K', 'K', 'K', 'K'};
 
-int score(char *hand)
+void gamecpy(game *dst, game *src)
+{
+	dst->nplayers = src->nplayers;
+	dst->current = src->current;
+	dst->finish = src->finish;
+	memcpy(dst->names, src->names, sizeof(dst->names));
+	memcpy(dst->hands, src->hands, sizeof(dst->hands));
+	memcpy(dst->scores, src->scores, sizeof(dst->scores));
+	memcpy(dst->deck, src->deck, sizeof(dst->deck));
+}
+
+int gamecmp(game *a, game *b)
+{
+	if (a->nplayers != b->nplayers)
+		return 0;
+	if (a->current != b->current)
+		return 0;
+	if (a->finish != b->finish)
+		return 0;
+	if (memcmp(a->names, b->names, sizeof(a->names)) != 0)
+		return 0;
+	if (memcmp(a->hands, b->hands, sizeof(a->hands)) != 0)
+		return 0;
+	if (memcmp(a->scores, b->scores, sizeof(a->scores)) != 0)
+		return 0;
+	if (memcmp(a->deck, b->deck, sizeof(a->deck)) != 0)
+		return 0;
+	return 1;
+}
+
+int score(char *hand, int ace)
 {
 	int i, ret;
 	
@@ -61,7 +91,10 @@ int score(char *hand)
 				ret += 10;
 				break;
 			case 'A':
-				ret += 1;
+				if (ace)
+					ret += 11;
+				else
+					ret += 1;
 				break;
 			default:
 				ret += hand[i] - '0';
@@ -90,7 +123,7 @@ void deal(void)
 	/* Initialise game state */
 	memset(state.hands, '\0', sizeof(state.hands));
 	memset(state.deck, '\0', sizeof(state.deck));
-	state.finish = state.current = turn = 0;
+	state.finish = state.current = 0;
 	
 	/* Shuffle deck */
 	for (i = 0; i < 52; i++)
@@ -116,9 +149,9 @@ void deal(void)
 		{
 			drawcard(i, j);
 		}
-		state.scores[i] = score(state.hands[i]);
+		state.scores[i] = score(state.hands[i], 0);
 	}
-	previous = strlen(state.deck);
+	gamecpy(&previous, &state);
 }
 
 void printcard(int y, int x, char card)
@@ -139,58 +172,96 @@ void printcard(int y, int x, char card)
 	}
 }
 
+int win(void)
+{
+	int pscore_lo, pscore_hi, dscore_lo, dscore_hi;
+	
+	pscore_lo = state.scores[plid];
+	pscore_hi = score(state.hands[plid], 1);
+	dscore_lo = state.scores[state.nplayers - 1];
+	dscore_hi = score(state.hands[state.nplayers - 1], 1);
+	
+	if (pscore_lo > 21) /* Player bust */
+		return 0;
+	else if (dscore_lo > 21) /* Dealer bust */
+		return 1;
+	
+	if (pscore_lo > dscore_hi)
+		return 1;
+	else if (pscore_hi <= 21 && pscore_hi > dscore_hi)
+		return 1;
+	else if (pscore_lo == dscore_lo || pscore_hi == dscore_hi)
+		return 2;
+	else
+		return 0;
+}
+
 void printdeal(void)
 {
-	int i, j;
+	int i, j, mywin;
 	char score[5];
 	
 	/* Clear the screen */
 	clear();
 	
-	/* Draw a nice border */
-	border('|', '|', '-', '-', '+', '+', '+', '+');
-	
 	/* Draw title and info */
-	if (state.current == plid)
+	if (state.finish)
+	{
+		mvaddstr(1, 1, "BLACKJACK    > GAME COMPLETE... Thanks for playing! Press [Q] to quit.");
+		if (plid != state.nplayers - 1)
+		{
+			mywin = win();
+			if (mywin == 1)
+				mvaddstr(2, 1, "You beat the dealer!");
+			else if (mywin == 2)
+				mvaddstr(2, 1, "You drew with the dealer!");
+			else
+				mvaddstr(2, 1, "You lost to the dealer!");
+		}
+	}
+	else if (state.current == plid)
 		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick.");
+	else if (state.scores[plid] > 21)
+		mvaddstr(1, 1, "BLACKJACK    > BUST!!!");
 	else
 		mvaddstr(1, 1, "BLACKJACK");
 		
-	if (state.scores[plid] > 21)
-		mvaddstr(1, 1, "BLACKJACK    > BUST!!!                                      ");
-		
+
+
 	/* Print the dealt hands */
 	for (i = 0; i < state.nplayers; i++)
 	{
-		mvaddstr(4 + 4*i, 2, state.names[i]);
-		if (i == state.nplayers - 1 && plid != state.nplayers - 1)
+		mvaddstr(5 + 4*i, 2, state.names[i]);
+		if (i == state.nplayers - 1 && !state.finish && plid != state.nplayers - 1)
 			snprintf(score, sizeof(score), "[?]");
 		else
 			snprintf(score, sizeof(score), "[%d]", state.scores[i]);
-		mvaddstr(4 + 4*i, 2 + strlen(state.names[i]), score);
+		mvaddstr(5 + 4*i, 2 + strlen(state.names[i]), score);
 		for(j = 0; j < strlen(state.hands[i]); j++)
 		{
-			if (j == 0 && i == state.nplayers - 1 && plid != state.nplayers - 1)
-				printcard(3 + 4*i, 7 + strlen(state.names[i]) + 5*j, ' ');
+			if (j == 0 && i == state.nplayers - 1 && !state.finish && plid != state.nplayers - 1)
+				printcard(4 + 4*i, 7 + strlen(state.names[i]) + 5*j, ' ');
 			else
-				printcard(3 + 4*i, 7 + strlen(state.names[i]) + 5*j, state.hands[i][j]);
+				printcard(4 + 4*i, 7 + strlen(state.names[i]) + 5*j, state.hands[i][j]);
 		}
 	}
+	
+	/* Draw a nice border */
+	border('|', '|', '-', '-', '+', '+', '+', '+');
 }
 
 int dealer(void)
 {
 	int i, ready, hit;
 	
-	if (dresized() || strlen(state.deck) != previous || state.current != turn)
+	if (dresized() || !gamecmp(&state, &previous))
 		printdeal();
-		
+	gamecpy(&previous, &state);
+
 	if (finished)
 		return 0;
 
 	/* Send game state to players */
-	previous = strlen(state.deck);
-	turn = state.current;
 	for (i = 0; i < state.nplayers - 1; i++)
 		stoc(i, &state, sizeof(state));
 		
@@ -213,7 +284,8 @@ int dealer(void)
 		{
 			/* Draw new card */
 			drawcard(state.current, strlen(state.hands[state.current]));
-			state.scores[state.current] = score(state.hands[state.current]);
+			state.scores[state.current] = score(state.hands[state.current], 0);
+			uhit = 0;
 		}
 		else if (ustand)
 			state.finish = 1;
@@ -230,7 +302,7 @@ int dealer(void)
 			{
 				/* Draw new card */
 				drawcard(state.current, strlen(state.hands[state.current]));
-				state.scores[state.current] = score(state.hands[state.current]);
+				state.scores[state.current] = score(state.hands[state.current], 0);
 			}
 			else
 				state.current++;
@@ -243,15 +315,14 @@ int player(void)
 {
 	int ready, z;
 	
-	if (dresized() || strlen(state.deck) != previous || state.current != turn)
+	if (dresized() || !gamecmp(&state, &previous))
 		printdeal();
+	gamecpy(&previous, &state);
 		
 	if (finished)
 		return 0;
 		
 	/* Receive current game state */
-	previous = strlen(state.deck);
-	turn = state.current;
 	cfroms(&state, sizeof(state));
 	
 	if (state.finish)
@@ -339,7 +410,7 @@ void servermain(int nclient, char *path)
 	printf("Please input your name [20 character limit]:\n");
 	if (fgets(state.names[state.nplayers - 1], sizeof(state.names[0]), stdin) == NULL)
 		ehandler("fgets error");
-	sstart(nclient, path);
+	sstart(nclient, path, MSG_NORECON);
 	
 	/* Receive player names */
 	for (i = 0; i < nclient; i++)

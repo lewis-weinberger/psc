@@ -1,14 +1,18 @@
 # psc
+
+![](https://github.com/lewis-weinberger/psc/workflows/build/badge.svg)
+
 > A collection of very simple multiplayer turn-based terminal games. 
 
-This collection was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support low bandwidth/latency internet connections.
+This *work-in-progress* collection was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support low bandwidth/latency internet connections.
 
 [UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine).
 
 ## Screenshots
 
 #### Blackjack
-![blackjack](./img/blackjack.gif)
+![blackjack start](./img/blackjack.png)
+![blackjack finish](./img/blackjack2.png)
 
 ## Installation
 
@@ -41,7 +45,7 @@ game /tmp/game_socket
 
 Each game is turn-based, and will indicate when it is the given player's turn. 
 
-Note that if a client game terminates then the host game will wait until a new player joins to fill their place. If the host game terminates then all the clients will also terminate. If the game is finished normally, the socket will be unlinked, however if the server program is interrupted you will have to manually unlink the socket.
+Note that in some of the games, if a client game terminates then the host game will wait until a new player joins to fill their place. If the host game terminates then all the clients will also terminate. If the game is finished normally, the socket will be unlinked, however if the server program is interrupted you will have to manually unlink the socket.
 
 ## Writing new games
 
@@ -59,7 +63,7 @@ Following this documentation and using existing game examples, it should (hopefu
 ### Planned games
 
 The following games are being written for the collection:
-- [ ] [Blackjack](https://en.wikipedia.org/wiki/Blackjack): 2+ players
+- [x] [Blackjack](https://en.wikipedia.org/wiki/Blackjack): 2+ players
 - [ ] [Labyrinth](https://en.wikipedia.org/wiki/Labyrinth_(paper-and-pencil_game)): 3+ players
 - [ ] [Sternhalma](https://en.wikipedia.org/wiki/Chinese_checkers): 2, 3, 4 or 6 players
 - [ ] [Go](https://en.wikipedia.org/wiki/Go_(game)): 2 players
