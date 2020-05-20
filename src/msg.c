@@ -12,7 +12,7 @@
 #include "error.h"
 
 struct sockaddr_un addr;
-int nclient, sfd, *cfd;
+int nclient, sfd, *cfd, reconnect;
 char path[sizeof(addr.sun_path)];
 fd_set readfds;
 
@@ -20,9 +20,10 @@ fd_set readfds;
  * Start the server-side ipc.
  * nc -- number of clients expected to join.
  * sp -- filepath of the (Unix domain) socket to create.
+ * opt -- whether to attempt reconnect on error.
  * Note: must call sstop() when finished, to clean up.
  */
-void sstart(int nc, char *sp)
+void sstart(int nc, char *sp, int opt)
 {
 	int i;
 	char welcome[1024];
@@ -32,6 +33,7 @@ void sstart(int nc, char *sp)
 	estart(NULL);
 	
 	nclient = nc;
+	reconnect = opt;
 	strncpy(path, sp, sizeof(path) - 1);
 	eprintf("Server starting, expecting %d client(s)\n", nclient);
 
@@ -110,7 +112,7 @@ void cstart(char *sp)
  * client -- ID of client to send to.
  * msg -- buffer holding message contents.
  * len -- number of bytes of message to send.
-  * Returns: number of bytes sent.
+ * Returns: number of bytes sent.
  * Note: msg buffer must be at least len bytes long.
  */
 ssize_t stoc(int client, void *msg, size_t len)
@@ -120,7 +122,7 @@ ssize_t stoc(int client, void *msg, size_t len)
 	
 	if ((n = write(cfd[client], msg, len)) < 0)
 	{
-		if (errno == EPIPE) /* No reader at other end of pipe */
+		if (errno == EPIPE && reconnect == MSG_RECON) /* No reader at other end of pipe */
 		{
 			close(cfd[client]);
 			eprintf("Client connection closed, waiting for reconnection...\n");
@@ -180,7 +182,7 @@ ssize_t sfromc(int client, void *msg, size_t len)
 	if ((n = read(cfd[client], msg, len)) < 0)
 		ehandler("read error");
 	
-	if (n == 0) /* No writer at other end of pipe */
+	if (n == 0 && MSG_RECON) /* No writer at other end of pipe */
 	{
 		close(cfd[client]);
 		eprintf("Client connection closed, waiting for reconnection...\n");
