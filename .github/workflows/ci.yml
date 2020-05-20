@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: install ncurses
-      run: sudo apt-get install lib32ncurses5 lib32ncurses5-dev
+      run: sudo apt-get install libncurses5 libncurses5-dev
     - name: make test applications
       run: make test
     - name: make
