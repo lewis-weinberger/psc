@@ -139,6 +139,8 @@ ssize_t stoc(int client, void *msg, size_t len)
 			/* Continue as before, sending original message */
 			stoc(client, msg, len);		
 		}
+		else if (errno == EINTR) /* Interrupted... try again */
+			stoc(client, msg, len);
 		else
 			ehandler("read error");
 	}
@@ -160,6 +162,8 @@ ssize_t ctos(void *msg, size_t len)
 	{
 		if (errno == EPIPE) /* No reader at other end of pipe */
 			ehandler("Server closed");
+		else if (errno == EINTR) /* Interrupted... try again */
+			ctos(msg, len);
 		else	
 			ehandler("read error");
 	}
@@ -180,7 +184,12 @@ ssize_t sfromc(int client, void *msg, size_t len)
 	char welcome[1024];
 	
 	if ((n = read(cfd[client], msg, len)) < 0)
-		ehandler("read error");
+	{
+		if (errno == EINTR) /* Interrupted... try again */
+			sfromc(client, msg, len);
+		else
+			ehandler("read error");
+	}
 	
 	if (n == 0 && MSG_RECON) /* No writer at other end of pipe */
 	{
@@ -216,7 +225,12 @@ ssize_t cfroms(void *msg, size_t len)
 	ssize_t n;
 	
 	if ((n = read(sfd, msg, len)) < 0)
-		ehandler("read error");
+	{
+		if (errno = EINTR) /* Interrupted... try again */
+			cfroms(msg, len);
+		else
+			ehandler("read error");
+	}
 	
 	if (n == 0) /* Socket closed at server end */
 		ehandler("Server closed");
