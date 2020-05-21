@@ -13,18 +13,20 @@
 #include "error.h"
 
 struct sockaddr_un addr;
-int nclient, sfd, *cfd, reconnect;
+int nclient, sfd, *cfd, reconflag;
 char path[sizeof(addr.sun_path)];
 fd_set readfds;
+void (*reconnect)(int);
 
 /*
  * Start the server-side ipc.
  * nc -- number of clients expected to join.
  * sp -- filepath of the (Unix domain) socket to create.
  * opt -- whether to attempt reconnect on error.
+ * f -- function to call when attempting to reconnect.
  * Note: must call sstop() when finished, to clean up.
  */
-void sstart(int nc, char *sp, int opt)
+void sstart(int nc, char *sp, int opt, void (*f)(int))
 {
 	int i;
 	char welcome[1024];
@@ -34,7 +36,8 @@ void sstart(int nc, char *sp, int opt)
 	estart(NULL);
 	
 	nclient = nc;
-	reconnect = opt;
+	if((reconflag = opt) == MSG_RECON && f)
+		reconnect = f;
 	strncpy(path, sp, sizeof(path) - 1);
 	eprintf("Server starting, expecting %d client(s)\n", nclient);
 
@@ -127,7 +130,7 @@ ssize_t stoc(int client, void *msg, size_t len)
 	
 	if ((n = write(cfd[client], msg, len)) < 0)
 	{
-		if (errno == EPIPE && reconnect == MSG_RECON) /* No reader at other end of pipe */
+		if (errno == EPIPE && reconflag == MSG_RECON) /* No reader at other end of pipe */
 		{
 			close(cfd[client]);
 			eprintf("Client connection closed, waiting for reconnection...\n");
@@ -141,6 +144,9 @@ ssize_t stoc(int client, void *msg, size_t len)
 			strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
 			stoc(client, welcome, sizeof(welcome));
 			
+			/* User-defined reconnection procedure */
+			reconnect(MSG_SEND);
+
 			/* Continue as before, sending original message */
 			stoc(client, msg, len);		
 		}
@@ -196,7 +202,7 @@ ssize_t sfromc(int client, void *msg, size_t len)
 			ehandler("read error");
 	}
 	
-	if (n == 0 && MSG_RECON) /* No writer at other end of pipe */
+	if (n == 0 && reconflag == MSG_RECON) /* No writer at other end of pipe */
 	{
 		close(cfd[client]);
 		eprintf("Client connection closed, waiting for reconnection...\n");
@@ -209,7 +215,10 @@ ssize_t sfromc(int client, void *msg, size_t len)
 		/* Send welcome message */
 		strncpy(welcome, "--> [Server] Welcome!", sizeof(welcome));
 		stoc(client, welcome, sizeof(welcome));
-		
+
+		/* User-defined reconnection procedure */
+		reconnect(MSG_RECV);
+
 		/* Continue as before, receiving message */
 		memset(msg, 0, len);
 		sfromc(client, msg, len);

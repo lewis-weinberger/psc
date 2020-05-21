@@ -16,7 +16,7 @@ void servermain(int nclient, char *path)
 	char msg[1024];
 	
 	/* Start server and connect to clients */
-	sstart(nclient, path, MSG_RECON);
+	sstart(nclient, path, MSG_NORECON, NULL);
 	
 	for (;;)
 	{

@@ -377,7 +377,7 @@ void servermain(int nclient, char *path)
 	printf("Please input your name [20 character limit]:\n");
 	if (fgets(state.names[state.nplayers - 1], sizeof(state.names[0]), stdin) == NULL)
 		ehandler("fgets error");
-	sstart(nclient, path, MSG_NORECON);
+	sstart(nclient, path, MSG_NORECON, NULL);
 	
 	/* Receive player names */
 	for (i = 0; i < nclient; i++)
