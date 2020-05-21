@@ -45,36 +45,6 @@ const char cards[52] = { 'A', 'A', 'A', 'A',
                          'Q', 'Q', 'Q', 'Q',
                          'K', 'K', 'K', 'K'};
 
-void gamecpy(game *dst, game *src)
-{
-	dst->nplayers = src->nplayers;
-	dst->current = src->current;
-	dst->finish = src->finish;
-	memcpy(dst->names, src->names, sizeof(dst->names));
-	memcpy(dst->hands, src->hands, sizeof(dst->hands));
-	memcpy(dst->scores, src->scores, sizeof(dst->scores));
-	memcpy(dst->deck, src->deck, sizeof(dst->deck));
-}
-
-int gamecmp(game *a, game *b)
-{
-	if (a->nplayers != b->nplayers)
-		return 0;
-	if (a->current != b->current)
-		return 0;
-	if (a->finish != b->finish)
-		return 0;
-	if (memcmp(a->names, b->names, sizeof(a->names)) != 0)
-		return 0;
-	if (memcmp(a->hands, b->hands, sizeof(a->hands)) != 0)
-		return 0;
-	if (memcmp(a->scores, b->scores, sizeof(a->scores)) != 0)
-		return 0;
-	if (memcmp(a->deck, b->deck, sizeof(a->deck)) != 0)
-		return 0;
-	return 1;
-}
-
 int score(char *hand, int ace)
 {
 	int i, ret;
@@ -151,7 +121,7 @@ void deal(void)
 		}
 		state.scores[i] = score(state.hands[i], 0);
 	}
-	gamecpy(&previous, &state);
+	memcpy(&previous, &state, sizeof(previous));
 }
 
 void printcard(int y, int x, char card)
@@ -225,8 +195,6 @@ void printdeal(void)
 		mvaddstr(1, 1, "BLACKJACK    > BUST!!!");
 	else
 		mvaddstr(1, 1, "BLACKJACK");
-		
-
 
 	/* Print the dealt hands */
 	for (i = 0; i < state.nplayers; i++)
@@ -254,9 +222,9 @@ int dealer(void)
 {
 	int i, ready, hit;
 	
-	if (dresized() || !gamecmp(&state, &previous))
+	if (dresized() || memcmp(&state, &previous, sizeof(state)) != 0)
 		printdeal();
-	gamecpy(&previous, &state);
+	memcpy(&previous, &state, sizeof(previous));
 
 	if (finished)
 		return 0;
@@ -315,9 +283,9 @@ int player(void)
 {
 	int ready, z;
 	
-	if (dresized() || !gamecmp(&state, &previous))
+	if (dresized() || memcmp(&state, &previous, sizeof(state)) != 0)
 		printdeal();
-	gamecpy(&previous, &state);
+	memcpy(&previous, &state, sizeof(previous));
 		
 	if (finished)
 		return 0;
@@ -383,7 +351,6 @@ int input(int key)
 	}
 	return 0;
 }
-
 
 void sehandler(const char *message)
 {
