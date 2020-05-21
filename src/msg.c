@@ -5,6 +5,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
@@ -53,6 +54,10 @@ void sstart(int nc, char *sp, int opt)
 	if (bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
 		ehandler("bind error");
 	eprintf("* Listening on socket: %s\n", path);
+
+	/* Ensure permissions on socket allow (any) other users to join */
+	if(chmod(path, S_IRWXG | S_IRWXU | S_IRWXO) < 0)
+		ehandler("chmod error");
 
 	/* Specify maximum number of connections */
 	if (listen(sfd, nclient) < 0)
