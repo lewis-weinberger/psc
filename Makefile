@@ -19,6 +19,10 @@ bin/echotest: build/echotest.o build/msg.o build/error.o
 	mkdir -p bin
 	$(CC) -o $@ $^ $(CFLAGS)
 
+build/%.o: src/cmd/%.c
+	mkdir -p build
+	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
+
 build/%.o: src/%.c
 	mkdir -p build
 	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
