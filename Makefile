@@ -1,32 +1,47 @@
-CC=gcc
-CFLAGS=-g -O2 -pedantic -Wall -Werror
+# psc: Makefile
+.POSIX:
 
-.PHONY: all
-all: bin/blackjack
+include config.mk
 
-.PHONY: test
-test: bin/echotest bin/drawtest
+all: lib blackjack
 
-bin/blackjack: build/blackjack.o build/draw.o build/msg.o build/error.o
+lib: lib/libpsc.so
+
+blackjack: bin/blackjack
+
+bin/%: build/%.o lib/libpsc.so
 	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS) -lncurses -ltinfo
+	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc
 
-bin/drawtest: build/drawtest.o build/draw.o build/error.o
-	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS) -lncurses -ltinfo
-
-bin/echotest: build/echotest.o build/msg.o build/error.o
-	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS)
+lib/libpsc.so: build/psc.o
+	mkdir -p lib
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 
 build/%.o: src/cmd/%.c
 	mkdir -p build
 	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
 
-build/%.o: src/%.c
+build/%.o: src/lib/%.c
 	mkdir -p build
 	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
 
-.PHONY: clean
 clean:
-	rm -rf bin build
+	rm -rf bin lib build
+
+install: lib/libpsc.o bin/blacjack man/man3/psc.3
+	mkdir -p $(LIBPREFIX)
+	cp -f lib/libpsc.so $(LIBPREFIX)/libpsc.so
+	chmod 644 $(LIBPREFIX)/libpsc.so
+	mkdir -p $(BINPREFIX)
+	cp -f bin/blackjack $(BINPREFIX)/blackjack
+	chmod 755 $(BINPREFIX)/blackjack
+	mkdir -p $(MANPREFIX)/man3
+	cp -f man/man3/psc.3 $(MANPREFIX)/man3/psc.3
+	chmod 644 $(MANPREFIX)/man3/psc.3
+
+uninstall:
+	rm -f $(LIBPREFIX)/libpsc.so
+	rm -f $(BINPREFIX)/blackjack
+	rm -f $(MANPREFIX)/man3/psc.3
+
+.PHONY: all lib blackjack clean install uninstall
