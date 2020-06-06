@@ -36,7 +36,7 @@ Build artefacts (compiled object files) will be stored in a `build/` directory. 
 
 ## Documentation
 
-Details of how to use the library can be found in [psc(3)](./man/psc.3):
+Details of how to use the library can be found in [psc(3)](./man/man3/psc.3):
 
 ```sh
 man psc # assuming make install has put psc.3 somewhere on your MANPATH
@@ -51,6 +51,11 @@ blackjack -h
 will print:
 
 ```sh
+usage: blackjack [-h] [-n nclient]
+-h:
+        prints this help
+-n:
+        specify number of clients (server only)
 ```
 
 ## Example Games
