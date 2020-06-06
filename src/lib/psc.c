@@ -26,8 +26,6 @@ typedef struct
 {
 	void            *game;
 	size_t          len;
-	int             current;
-	psc_cmp         cmp;
 	pthread_mutex_t mutex;
 } psc_state;
 
@@ -46,11 +44,10 @@ typedef struct
 static psc_state state;
 static psc_log log;
 static psc_status status;
-static int player_id;
 static pthread_t *tid;
 static int *cfd, sfd;
 static struct sockaddr_un addr;
-const char socket_path[] = "/tmp/psc_socket";
+const  char socket_path[] = "/tmp/psc_socket";
 
 static int  cfroms(void*, size_t);
 static void client_main(psc_loop);
@@ -72,15 +69,12 @@ static int  stoc(int, void*, size_t);
  * Run game loop.
  * game: pointer to game state.
  * loop: function to execute at each game loop.
- * cmp: function to compare game state.
- * inst: type of instance (server or client).
- * Return: PSC_OK on success, PSC_EINST on failure.
+ * nclient: number of clients (should be > 0 for server caller).
  */
-void psc_run(void *game, size_t len, psc_loop loop, psc_cmp cmp, int nclient)
+void psc_run(void *game, size_t len, psc_loop loop, int nclient)
 {
 	state.game = game;
 	state.len = len;
-	state.cmp = cmp;
 	pthread_mutex_init(&state.mutex, NULL);
 
 	status.exit = FALSE;
@@ -97,6 +91,7 @@ void psc_run(void *game, size_t len, psc_loop loop, psc_cmp cmp, int nclient)
 		memset(cfd, 0, nclient * sizeof(int));
 		server_main(loop, nclient);
 		free(tid);
+		free(cfd);
 	}
 	else if (nclient == 0)
 		client_main(loop);
@@ -110,14 +105,21 @@ void psc_run(void *game, size_t len, psc_loop loop, psc_cmp cmp, int nclient)
  * Draw string to terminal.
  * y: vertical position on terminal, starting at zero at the top of the terminal.
  * x: horizontal position on terminal, starting at zero at the left of the terminal.
+ * n: number of bytes to be printed.
  * str: string to be printed.
  * Return: PSC_OK on success, PSC_EDRAW on failure.
  */
-psc_err psc_draw(int y, int x, char* str)
+int psc_draw(int y, int x, int n, char str[])
 {
-	if (mvaddstr(y, x, (const char*)str) == ERR)
-		return PSC_EDRAW;
-	return PSC_OK;
+	int i, c;
+
+	for (i = 0, c = 0; i < n; i++)
+	{
+		if (mvaddch(y, x + i, str[i]) == ERR)
+			return -1;
+		c++;
+	}
+	return c;
 }
 
 static void log_error(const char *str, const char *place)
@@ -138,9 +140,21 @@ static void log_error(const char *str, const char *place)
 	pthread_mutex_unlock(&log.mutex);
 }
 
+static void error_handler(const char *str, const char* place)
+{
+	log_error(str, place);
+	pthread_mutex_lock(&status.mutex);
+	status.exit = TRUE;
+	pthread_mutex_unlock(&status.mutex);
+}
+
 static void server_main(psc_loop loop, int nclient)
 {
-	int i, ret, input, exit;
+	int i, ret, state_changed, input, exit;
+	void *previous;
+
+	previous = emalloc(state.len);
+	memcpy(previous, state.game, state.len);
 
 	/* Connect to clients */
 	socket_init(nclient);
@@ -148,12 +162,13 @@ static void server_main(psc_loop loop, int nclient)
 	{
 		if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
 			log_error("accept error", PLACE);
-		stoc(cfd[i], &i, sizeof(int));
-		log_error("* Client connected", NULL);
-
-		pthread_create(&tid[i], NULL, &server_update, &cfd[i]);
+		else
+		{
+			stoc(cfd[i], &i, sizeof(i));
+			log_error("* Client connected", NULL);
+			pthread_create(&tid[i], NULL, &server_update, &cfd[i]);
+		}
 	}
-	player_id = nclient;
 
 	/* Initialise curses */
 	curses_init();
@@ -168,9 +183,7 @@ static void server_main(psc_loop loop, int nclient)
 		if (exit)
 		{
 			for (i = 0; i < nclient; i++)
-			{
 				pthread_join(tid[i], NULL);
-			}
 			break;
 		}
 
@@ -179,7 +192,9 @@ static void server_main(psc_loop loop, int nclient)
 
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
-		ret = loop(state.game, state.current, player_id, input);
+		state_changed = memcmp(previous, state.game, state.len);
+		ret = loop(state.game, state_changed, nclient, input);
+		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
 
 		/* Flush draws to terminal */
@@ -192,9 +207,7 @@ static void server_main(psc_loop loop, int nclient)
 			status.exit = TRUE;
 			pthread_mutex_unlock(&status.mutex);
 			for (i = 0; i < nclient; i++)
-			{
 				pthread_join(tid[i], NULL);
-			}
 			break;
 		}
 	}
@@ -206,12 +219,16 @@ static void server_main(psc_loop loop, int nclient)
 
 static void client_main(psc_loop loop)
 {
-	int ret, input, exit;
+	int ret, state_changed, input, player_id, exit;
 	pthread_t thread;
+	void *previous;
+
+	previous = emalloc(state.len);
+	memcpy(previous, state.game, state.len);
 
 	/* Connect to server */
 	socket_connect();
-	cfroms(&player_id, sizeof(int));
+	cfroms(&player_id, sizeof(player_id));
 	log_error("* Connected to server", NULL);
 	pthread_create(&thread, NULL, &client_update, NULL);
 
@@ -236,7 +253,9 @@ static void client_main(psc_loop loop)
 
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
-		ret = loop(state.game, state.current, player_id, input);
+		state_changed = memcmp(previous, state.game, state.len);
+		ret = loop(state.game, state_changed, player_id, input);
+		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
 
 		/* Flush draws to terminal */
@@ -279,7 +298,10 @@ static void socket_init(int nclient)
 {
 	/* Create socket */
 	if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+	{
 		log_error("socket error", PLACE);
+		exit(-1);
+	}
 
 	/* Bind socket to path */
 	memset(&addr, 0, sizeof(addr));
@@ -287,7 +309,11 @@ static void socket_init(int nclient)
 	strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path));
 	unlink(socket_path);
 	if (bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+	{
 		log_error("bind error", PLACE);
+		socket_fin();
+		exit(-1);
+	}
 
 	log_error("* Listening on socket", socket_path);
 
@@ -297,21 +323,32 @@ static void socket_init(int nclient)
 
 	/* Specify maximum number of connections */
 	if (listen(sfd, nclient) < 0)
+	{
 		log_error("listen error", PLACE);
+		socket_fin();
+		exit(-1);
+	}
 }
 
-void socket_connect(void)
+static void socket_connect(void)
 {
 	/* Open socket */
 	if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+	{
 		log_error("socket error", PLACE);
+		close(sfd);
+		exit(-1);
+	}
 
 	/* Connect to server */
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path));
 	if (connect(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+	{
 		log_error("connect error", PLACE);
+		close(sfd);
+	}
 }
 
 static void socket_fin(void)
@@ -323,7 +360,7 @@ static void socket_fin(void)
 
 static void *server_update(void *arg)
 {
-	int alt, client;
+	int alt, client, exit;
 	void *previous;
 
 	client = *(int *)arg;
@@ -335,10 +372,17 @@ static void *server_update(void *arg)
 
 	for (;;)
 	{
+		/* Check for exit from other threads */
+		pthread_mutex_lock(&status.mutex);
+		exit = status.exit;
+		pthread_mutex_unlock(&status.mutex);
+		if (exit)
+			break;
+
 		pthread_mutex_lock(&state.mutex);
 
 		/* Send any changes to client */
-		alt = state.cmp(previous, state.game, state.len);
+		alt = memcmp(previous, state.game, state.len);
 		stoc(client, &alt, sizeof(int));
 		if (alt)
 			stoc(client, state.game, state.len);
@@ -360,7 +404,7 @@ static void *server_update(void *arg)
 
 static void *client_update(void *arg)
 {
-	int alt;
+	int alt, exit;
 	void *previous;
 
 	pthread_mutex_lock(&state.mutex);
@@ -370,6 +414,13 @@ static void *client_update(void *arg)
 
 	for (;;)
 	{
+		/* Check for exit from other threads */
+		pthread_mutex_lock(&status.mutex);
+		exit = status.exit;
+		pthread_mutex_unlock(&status.mutex);
+		if (exit)
+			break;
+
 		pthread_mutex_lock(&state.mutex);
 
 		/* Receive any changes from server */
@@ -381,7 +432,7 @@ static void *client_update(void *arg)
 		}
 
 		/* Send any changes to server */
-		alt = state.cmp(previous, state.game, state.len);
+		alt = memcmp(previous, state.game, state.len);
 		ctos(&alt, sizeof(int));
 		if (alt)
 			ctos(state.game, state.len);
@@ -402,7 +453,7 @@ static int sfromc(int client, void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			sfromc(client, msg, len);
 		else
-			log_error("read error", PLACE);
+			error_handler("read error", PLACE);
 	}
 	return n;
 }
@@ -416,7 +467,7 @@ static int stoc(int client, void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			stoc(client, msg, len);
 		else
-			log_error("write error", PLACE);
+			error_handler("write error", PLACE);
 	}
 	return n;
 }
@@ -430,7 +481,7 @@ static int cfroms(void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			cfroms(msg, len);
 		else
-			log_error("read error", PLACE);
+			error_handler("read error", PLACE);
 	}
 	return n;
 }
@@ -444,7 +495,7 @@ static int ctos(void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			ctos(msg, len);
 		else
-			log_error("write error", PLACE);
+			error_handler("write error", PLACE);
 	}
 	return n;
 }
@@ -454,6 +505,9 @@ static void *emalloc(size_t len)
 	void *p;
 
 	if ((p = malloc(len)) == NULL)
+	{
 		log_error("malloc error", PLACE);
+		exit(-1);
+	}
 	return p;
 }

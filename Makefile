@@ -9,13 +9,13 @@ lib: lib/libpsc.so
 
 blackjack: bin/blackjack
 
-bin/%: build/%.o lib/libpsc.so
-	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc
-
 lib/libpsc.so: build/psc.o
 	mkdir -p lib
 	$(CC) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LDLIBS)
+
+bin/%: build/%.o lib/libpsc.so
+	mkdir -p bin
+	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc
 
 build/%.o: src/cmd/%.c
 	mkdir -p build
