@@ -31,18 +31,12 @@ typedef struct
 
 typedef struct
 {
-	FILE            *file;
-	pthread_mutex_t mutex;
-} psc_log;
-
-typedef struct
-{
 	int             exit;
 	pthread_mutex_t mutex;
 } psc_status;
 
 static psc_state state;
-static psc_log log;
+static FILE *log;
 static psc_status status;
 static pthread_t *tid;
 static int *cfd, sfd;
@@ -80,9 +74,11 @@ void psc_run(void *game, size_t len, psc_loop loop, int nclient)
 	status.exit = FALSE;
 	pthread_mutex_init(&status.mutex, NULL);
 
-	if((log.file = fopen("psc.log", "a")) == NULL)
-		log.file = stderr;
-	pthread_mutex_init(&log.mutex, NULL);
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGWINCH, SIG_IGN);
+
+	if((log = fopen("psc.log", "a")) == NULL)
+		log = stderr;
 
 	if (nclient > 0)
 	{
@@ -98,7 +94,9 @@ void psc_run(void *game, size_t len, psc_loop loop, int nclient)
 	else
 		log_error("number of clients must be >= 0", PLACE);
 
-	fclose(log.file);
+	pthread_mutex_destroy(&state.mutex);
+	pthread_mutex_destroy(&status.mutex);
+	fclose(log);
 }
 
 /*
@@ -107,7 +105,7 @@ void psc_run(void *game, size_t len, psc_loop loop, int nclient)
  * x: horizontal position on terminal, starting at zero at the left of the terminal.
  * n: number of bytes to be printed.
  * str: string to be printed.
- * Return: PSC_OK on success, PSC_EDRAW on failure.
+ * Return: number of bytes printed, or -1 on failure.
  */
 int psc_draw(int y, int x, int n, char str[])
 {
@@ -132,12 +130,12 @@ static void log_error(const char *str, const char *place)
 	time_info = localtime(&current_time);
 	strftime(strtime, sizeof(strtime), "%H:%M:%S", time_info);
 
-	pthread_mutex_lock(&log.mutex);
+	/* Apparently POSIX guarantees fprintf is thread-safe */
 	if (place != NULL)
-		fprintf(log.file, "[%s]: %s (%s)\n", strtime, str, place);
+		fprintf(log, "[%s]: %s (%s)\n", strtime, str, place);
 	else
-		fprintf(log.file, "[%s]: %s \n", strtime, str);
-	pthread_mutex_unlock(&log.mutex);
+		fprintf(log, "[%s]: %s\n", strtime, str);
+	fflush(log);
 }
 
 static void error_handler(const char *str, const char* place)
@@ -192,7 +190,9 @@ static void server_main(psc_loop loop, int nclient)
 
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
-		state_changed = memcmp(previous, state.game, state.len);
+		state_changed = FALSE;
+		if (memcmp(previous, state.game, state.len) != 0)
+			state_changed = TRUE;
 		ret = loop(state.game, state_changed, nclient, input);
 		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
@@ -253,7 +253,9 @@ static void client_main(psc_loop loop)
 
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
-		state_changed = memcmp(previous, state.game, state.len);
+		state_changed = FALSE;
+		if (memcmp(previous, state.game, state.len) != 0)
+			state_changed = TRUE;
 		ret = loop(state.game, state_changed, player_id, input);
 		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
@@ -311,10 +313,10 @@ static void socket_init(int nclient)
 	if (bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
 	{
 		log_error("bind error", PLACE);
-		socket_fin();
+		close(sfd);
+		unlink(socket_path);
 		exit(-1);
 	}
-
 	log_error("* Listening on socket", socket_path);
 
 	/* Ensure permissions on socket allow (any) other users to join */
@@ -325,7 +327,8 @@ static void socket_init(int nclient)
 	if (listen(sfd, nclient) < 0)
 	{
 		log_error("listen error", PLACE);
-		socket_fin();
+		close(sfd);
+		unlink(socket_path);
 		exit(-1);
 	}
 }
@@ -348,6 +351,7 @@ static void socket_connect(void)
 	{
 		log_error("connect error", PLACE);
 		close(sfd);
+		exit(-1);
 	}
 }
 
@@ -368,7 +372,8 @@ static void *server_update(void *arg)
 	pthread_mutex_lock(&state.mutex);
 	previous = emalloc(state.len);
 	memcpy(previous, state.game, state.len);
-	pthread_mutex_lock(&state.mutex);
+	stoc(client, state.game, state.len);
+	pthread_mutex_unlock(&state.mutex);
 
 	for (;;)
 	{
@@ -384,12 +389,12 @@ static void *server_update(void *arg)
 		/* Send any changes to client */
 		alt = memcmp(previous, state.game, state.len);
 		stoc(client, &alt, sizeof(int));
-		if (alt)
+		if (alt != 0)
 			stoc(client, state.game, state.len);
 
 		/* Receive any changes from client */
 		sfromc(client, &alt, sizeof(int));
-		if (alt)
+		if (alt != 0)
 		{
 			sfromc(client, state.game, state.len);
 			memcpy(previous, state.game, state.len);
@@ -410,7 +415,8 @@ static void *client_update(void *arg)
 	pthread_mutex_lock(&state.mutex);
 	previous = emalloc(state.len);
 	memcpy(previous, state.game, state.len);
-	pthread_mutex_lock(&state.mutex);
+	cfroms(state.game, state.len);
+	pthread_mutex_unlock(&state.mutex);
 
 	for (;;)
 	{
@@ -425,7 +431,7 @@ static void *client_update(void *arg)
 
 		/* Receive any changes from server */
 		cfroms(&alt, sizeof(int));
-		if (alt)
+		if (alt != 0)
 		{
 			cfroms(state.game, state.len);
 			memcpy(previous, state.game, state.len);
@@ -434,7 +440,7 @@ static void *client_update(void *arg)
 		/* Send any changes to server */
 		alt = memcmp(previous, state.game, state.len);
 		ctos(&alt, sizeof(int));
-		if (alt)
+		if (alt != 0)
 			ctos(state.game, state.len);
 
 		pthread_mutex_unlock(&state.mutex);

@@ -12,6 +12,7 @@
 #define PSC_RIGHT KEY_RIGHT
 #define PSC_BACKSPACE KEY_BACKSPACE
 #define PSC_DELETE KEY_DC
+#define PSC_NONE ERR
 
 typedef int (*psc_loop)(void*, int, int, int);
 
