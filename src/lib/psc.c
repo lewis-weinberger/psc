@@ -6,8 +6,6 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
-#include <curses.h>
-#include <locale.h>
 #include <time.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -44,14 +42,12 @@ static struct sockaddr_un addr;
 const  char socket_path[] = "/tmp/psc_socket";
 
 static int  cfroms(void*, size_t);
-static void client_main(psc_loop);
+static void client_main(psc_init, psc_loop, psc_fin);
 static void *client_update(void*);
 static int  ctos(void*, size_t);
-static void curses_init(void);
-static void curses_fin(void);
 static void *emalloc(size_t);
 static void log_error(const char*, const char*);
-static void server_main(psc_loop, int);
+static void server_main(psc_init, psc_loop, psc_fin, int);
 static void *server_update(void*);
 static int  sfromc(int, void*, size_t);
 static void socket_connect(void);
@@ -65,7 +61,7 @@ static int  stoc(int, void*, size_t);
  * loop: function to execute at each game loop.
  * nclient: number of clients (should be > 0 for server caller).
  */
-void psc_run(void *game, size_t len, psc_loop loop, int nclient)
+void psc_run(void *game, size_t len, psc_init init, psc_loop loop,  psc_fin fin, int nclient)
 {
 	state.game = game;
 	state.len = len;
@@ -73,9 +69,6 @@ void psc_run(void *game, size_t len, psc_loop loop, int nclient)
 
 	status.exit = FALSE;
 	pthread_mutex_init(&status.mutex, NULL);
-
-	signal(SIGPIPE, SIG_IGN);
-	signal(SIGWINCH, SIG_IGN);
 
 	if((log = fopen("psc.log", "a")) == NULL)
 		log = stderr;
@@ -85,39 +78,18 @@ void psc_run(void *game, size_t len, psc_loop loop, int nclient)
 		tid = emalloc(nclient * sizeof(pthread_t));
 		cfd = emalloc(nclient * sizeof(int));
 		memset(cfd, 0, nclient * sizeof(int));
-		server_main(loop, nclient);
+		server_main(init, loop, fin, nclient);
 		free(tid);
 		free(cfd);
 	}
 	else if (nclient == 0)
-		client_main(loop);
+		client_main(init, loop, fin);
 	else
 		log_error("number of clients must be >= 0", PLACE);
 
 	pthread_mutex_destroy(&state.mutex);
 	pthread_mutex_destroy(&status.mutex);
 	fclose(log);
-}
-
-/*
- * Draw string to terminal.
- * y: vertical position on terminal, starting at zero at the top of the terminal.
- * x: horizontal position on terminal, starting at zero at the left of the terminal.
- * n: number of bytes to be printed.
- * str: string to be printed.
- * Return: number of bytes printed, or -1 on failure.
- */
-int psc_draw(int y, int x, int n, char str[])
-{
-	int i, c;
-
-	for (i = 0, c = 0; i < n; i++)
-	{
-		if (mvaddch(y, x + i, str[i]) == ERR)
-			return -1;
-		c++;
-	}
-	return c;
 }
 
 static void log_error(const char *str, const char *place)
@@ -146,9 +118,9 @@ static void error_handler(const char *str, const char* place)
 	pthread_mutex_unlock(&status.mutex);
 }
 
-static void server_main(psc_loop loop, int nclient)
+static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 {
-	int i, ret, state_changed, input, exit;
+	int i, ret, state_changed, exit;
 	void *previous;
 
 	previous = emalloc(state.len);
@@ -168,8 +140,13 @@ static void server_main(psc_loop loop, int nclient)
 		}
 	}
 
-	/* Initialise curses */
-	curses_init();
+	/* User initialisation */
+	if (init() < 0)
+	{
+		log_error("user init failed", PLACE);
+		socket_fin();
+		return;
+	}
 
 	/* Run game loop */
 	for (;;)
@@ -185,20 +162,14 @@ static void server_main(psc_loop loop, int nclient)
 			break;
 		}
 
-		/* Get keyboard input */
-		input = getch();
-
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
 		state_changed = FALSE;
 		if (memcmp(previous, state.game, state.len) != 0)
 			state_changed = TRUE;
-		ret = loop(state.game, state_changed, nclient, input);
+		ret = loop(state.game, state_changed, nclient);
 		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
-
-		/* Flush draws to terminal */
-		refresh();
 
 		/* User quit? */
 		if (ret < 0)
@@ -214,12 +185,12 @@ static void server_main(psc_loop loop, int nclient)
 
 	/* Clean-up */
 	socket_fin();
-	curses_fin();
+	fin();
 }
 
-static void client_main(psc_loop loop)
+static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 {
-	int ret, state_changed, input, player_id, exit;
+	int ret, state_changed, player_id, exit;
 	pthread_t thread;
 	void *previous;
 
@@ -232,8 +203,13 @@ static void client_main(psc_loop loop)
 	log_error("* Connected to server", NULL);
 	pthread_create(&thread, NULL, &client_update, NULL);
 
-	/* Initialise curses */
-	curses_init();
+	/* User initialisation */
+	if (init() < 0)
+	{
+		log_error("user init failed", PLACE);
+		close(sfd);
+		return;
+	}
 
 	/* Run game loop */
 	for (;;)
@@ -248,20 +224,14 @@ static void client_main(psc_loop loop)
 			break;
 		}
 
-		/* Get keyboard input */
-		input = getch();
-
 		/* Evaluate user defined procedure */
 		pthread_mutex_lock(&state.mutex);
 		state_changed = FALSE;
 		if (memcmp(previous, state.game, state.len) != 0)
 			state_changed = TRUE;
-		ret = loop(state.game, state_changed, player_id, input);
+		ret = loop(state.game, state_changed, player_id);
 		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
-
-		/* Flush draws to terminal */
-		refresh();
 
 		/* User quit? */
 		if (ret < 0)
@@ -276,24 +246,7 @@ static void client_main(psc_loop loop)
 
 	/* Clean-up */
 	close(sfd);
-	curses_fin();
-}
-
-static void curses_init(void)
-{
-	setlocale(LC_ALL, "");
-	initscr();
-	cbreak();
-	noecho();
-	nodelay(stdscr, TRUE);
-	keypad(stdscr, TRUE);
-	curs_set(0);
-	clear();
-}
-
-static void curses_fin(void)
-{
-	endwin();
+	fin();
 }
 
 static void socket_init(int nclient)

@@ -3,6 +3,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <locale.h>
+#include <curses.h>
 #include "psc.h"
 
 enum
@@ -43,6 +45,7 @@ const char cards[52] = { 'A', 'A', 'A', 'A',
                          'K', 'K', 'K', 'K'};
 
 int uhit, ustand, unew, uquit;
+char name[21];
 
 int score(char *hand, int ace)
 {
@@ -81,6 +84,106 @@ void drawcard(game *state, int plid, int n)
 	state->hands[plid][n] = state->deck[b];
 	state->deck[b] = state->deck[c - 1];
 	state->deck[c - 1] = '\0';
+}
+
+void printcard(int y, int x, char card)
+{
+	if (card == 'X')
+	{
+		mvaddstr(y, x, "+--+");
+		mvaddstr(y + 1, x, "|10|");
+		mvaddstr(y + 2, x, "+--+");
+	}
+	else
+	{
+		mvaddstr(y, x, "+-+");
+		mvaddstr(y + 1, x, "|");
+		mvaddch(y + 1, x + 1, card);
+		mvaddstr(y + 1, x + 2, "|");
+		mvaddstr(y + 2, x, "+-+");
+	}
+}
+
+int win(game *state, int plid)
+{
+	int pscore_lo, pscore_hi, dscore_lo, dscore_hi;
+
+	pscore_lo = state->scores[plid];
+	pscore_hi = score(state->hands[plid], 1);
+	dscore_lo = state->scores[state->nplayers - 1];
+	dscore_hi = score(state->hands[state->nplayers - 1], 1);
+
+	if (pscore_lo > 21) /* Player bust */
+		return 0;
+	else if (dscore_lo > 21) /* Dealer bust */
+		return 1;
+
+	if (pscore_lo > dscore_hi)
+		return 1;
+	else if (pscore_hi <= 21 && pscore_hi > dscore_hi)
+		return 1;
+	else if (pscore_lo == dscore_lo || pscore_hi == dscore_hi)
+		return 2;
+	else
+		return 0;
+}
+
+void printdeal(game *state, int plid)
+{
+	int i, j, mywin;
+	char score[5];
+
+	/* Clear the screen */
+	clear();
+
+	/* Draw title and info */
+	if (state->finish)
+	{
+		mvaddstr(1, 1, "BLACKJACK    > GAME COMPLETE... Thanks for playing! Press [Q] to quit.");
+		if (plid != state->nplayers - 1)
+		{
+			mywin = win(state, plid);
+			if (mywin == 1)
+				mvaddstr(2, 1, "You beat the dealer!");
+			else if (mywin == 2)
+				mvaddstr(2, 1, "You drew with the dealer!");
+			else
+				mvaddstr(2, 1, "You lost to the dealer!");
+		}
+		else
+		{
+			mvaddstr(2, 1, "Press [N] to start a new game.");
+		}
+	}
+	else if (state->current == plid)
+		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick->");
+	else if (state->scores[plid] > 21)
+		mvaddstr(1, 1, "BLACKJACK    > BUST!!!");
+	else
+		mvaddstr(1, 1, "BLACKJACK");
+
+	/* Print the dealt hands */
+	for (i = 0; i < state->nplayers; i++)
+	{
+		mvaddstr(5 + 4*i, 2, state->names[i]);
+		if (i == state->nplayers - 1 && !state->finish && plid != state->nplayers - 1)
+			snprintf(score, sizeof(score), "[?]");
+		else
+			snprintf(score, sizeof(score), "[%d]", state->scores[i]);
+		mvaddstr(5 + 4*i, 2 + strlen(state->names[i]), score);
+		for(j = 0; j < strlen(state->hands[i]); j++)
+		{
+			if (j == 0 && i == state->nplayers - 1 && !state->finish && plid != state->nplayers - 1)
+				printcard(4 + 4*i, 7 + strlen(state->names[i]) + 5*j, ' ');
+			else
+				printcard(4 + 4*i, 7 + strlen(state->names[i]) + 5*j, state->hands[i][j]);
+		}
+	}
+
+	/* Draw a nice border */
+	border('|', '|', '-', '-', '+', '+', '+', '+');
+
+	refresh();
 }
 
 void deal(game *state)
@@ -123,139 +226,64 @@ void deal(game *state)
 	}
 }
 
-void printcard(int y, int x, char card)
+
+void input(void)
 {
-	if (card == 'X')
-	{
-		psc_draw(y, x, 4, "+--+");
-		psc_draw(y + 1, x, 4, "|10|");
-		psc_draw(y + 2, x, 4, "+--+");
-	}
-	else
-	{
-		psc_draw(y, x, 3, "+-+");
-		psc_draw(y + 1, x, 3, "|");
-		psc_draw(y + 1, x + 1, 3,  &card);
-		psc_draw(y + 1, x + 2, 3, "|");
-		psc_draw(y + 2, x, 3,  "+-+");
-	}
-}
-
-//int win(game state)
-//{
-//	int pscore_lo, pscore_hi, dscore_lo, dscore_hi;
-//
-//	pscore_lo = state.scores[plid];
-//	pscore_hi = score(state.hands[plid], 1);
-//	dscore_lo = state.scores[state.nplayers - 1];
-//	dscore_hi = score(state.hands[state.nplayers - 1], 1);
-//
-//	if (pscore_lo > 21) /* Player bust */
-//		return 0;
-//	else if (dscore_lo > 21) /* Dealer bust */
-//		return 1;
-//
-//	if (pscore_lo > dscore_hi)
-//		return 1;
-//	else if (pscore_hi <= 21 && pscore_hi > dscore_hi)
-//		return 1;
-//	else if (pscore_lo == dscore_lo || pscore_hi == dscore_hi)
-//		return 2;
-//	else
-//		return 0;
-//}
-
-void printdeal(game *state, int plid)
-{
-	int i, j; //, mywin;
-	char score[5];
-
-//	/* Draw title and info */
-//	if (state.finish)
-//	{
-//		mvaddstr(1, 1, "BLACKJACK    > GAME COMPLETE... Thanks for playing! Press [Q] to quit.");
-//		if (plid != state.nplayers - 1)
-//		{
-//			mywin = win();
-//			if (mywin == 1)
-//				mvaddstr(2, 1, "You beat the dealer!");
-//			else if (mywin == 2)
-//				mvaddstr(2, 1, "You drew with the dealer!");
-//			else
-//				mvaddstr(2, 1, "You lost to the dealer!");
-//		}
-//		else
-//		{
-//			mvaddstr(2, 1, "Press [N] to start a new game.");
-//		}
-//	}
-//	else if (state.current == plid)
-//		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick.");
-//	else if (state.scores[plid] > 21)
-//		mvaddstr(1, 1, "BLACKJACK    > BUST!!!");
-//	else
-//		mvaddstr(1, 1, "BLACKJACK");
-
-	/* Print the dealt hands */
-	for (i = 0; i < state->nplayers; i++)
-	{
-		psc_draw(5 + 4*i, 2, strlen(state->names[i]), state->names[i]);
-		if (i == state->nplayers - 1 && !state->finish && plid != state->nplayers - 1)
-			snprintf(score, sizeof(score), "[?]");
-		else
-			snprintf(score, sizeof(score), "[%d]", state->scores[i]);
-		psc_draw(5 + 4*i, 2 + strlen(state->names[i]), strlen(score), score);
-		for(j = 0; j < strlen(state->hands[i]); j++)
-		{
-			if (j == 0 && i == state->nplayers - 1 && !state->finish && plid != state->nplayers - 1)
-				printcard(4 + 4*i, 7 + strlen(state->names[i]) + 5*j, ' ');
-			else
-				printcard(4 + 4*i, 7 + strlen(state->names[i]) + 5*j, state->hands[i][j]);
-		}
-	}
-
-//	/* Draw a nice border */
-//	border('|', '|', '-', '-', '+', '+', '+', '+');
-}
-
-int input(int key)
-{
+	uquit = unew = uhit = ustand = FALSE;
 	/* Process user input */
-	switch (key)
+	switch (getch())
 	{
 		case 'q':
 		case 'Q':
-			uquit = 1;
+			uquit = TRUE;
 			break;
 		case 'n':
 		case 'N':
-			unew = 1;
+			unew = TRUE;
 			break;
 		case 'h':
 		case 'H':
-			uhit = 1;
+			uhit = TRUE;
 			break;
 		case 's':
 		case 'S':
-			ustand = 1;
+			ustand = TRUE;
 			break;
 		default:
 			break;
 	}
+}
+
+int init(void)
+{
+	setlocale(LC_ALL, "");
+	initscr();
+	cbreak();
+	noecho();
+	nodelay(stdscr, TRUE);
+	keypad(stdscr, TRUE);
+	curs_set(0);
+	clear();
 	return 0;
 }
 
-void input_name(game *state, int key)
+void fin(void)
 {
-	char *name;
-	int len;
+	endwin();
+}
 
-	name = state->names[state->current];
-	len = strlen(name);
-	psc_draw(0, 0, 42, "Please input your name [20 character max]:");
-	switch (key)
+int loop(void *in, int state_changed, int player_id)
+{
+	game *state;
+
+	state = (game *)in;
+
+	/* Initial game stage -- process name input */
+	if (state->init)
 	{
-		case '\n':
+		if (state->current == player_id)
+		{
+			memcpy(state->names[state->current], name, sizeof(name));
 			if (state->current < state->nplayers - 1)
 				state->current++;
 			else
@@ -263,38 +291,7 @@ void input_name(game *state, int key)
 				state->current = 0;
 				state->init = FALSE;
 			}
-			return;
-		case PSC_BACKSPACE:
-			if (len > 0)
-				name[len - 1] = '\0';
-		case PSC_DELETE:
-		case PSC_UP:
-		case PSC_DOWN:
-		case PSC_LEFT:
-		case PSC_RIGHT:
-		case PSC_NONE:
-			break;
-		default:
-			if (len < 20)
-				name[len] = key;
-			break;
-	}
-	psc_draw(1, 0, strlen(name), name);
-}
-
-int loop(void *in, int state_changed, int player_id, int key)
-{
-	game *state;
-
-	state = (game *)in;
-
-	/* Initial game stage -- name input */
-	if (state->init)
-	{
-		if (state->current == player_id)
-			input_name(state, key);
-		else
-			psc_draw(0, 0, 12, "Please wait!");
+		}
 		return 0;
 	}
 
@@ -303,7 +300,7 @@ int loop(void *in, int state_changed, int player_id, int key)
 		printdeal(state, player_id);
 
 	/* User input */
-	input(key);
+	input();
 
 	if (uquit)
 	{
@@ -316,7 +313,6 @@ int loop(void *in, int state_changed, int player_id, int key)
 		if (player_id == (state->nplayers - 1) && unew) /* Server can start a new game */
 		{
 			deal(state);
-			unew = 0;
 		}
 		return 0;
 	}
@@ -324,19 +320,17 @@ int loop(void *in, int state_changed, int player_id, int key)
 	/* Check if it's our turn */
 	if (state->current == player_id)
 	{
-		/* Name input */
 		/* Check if bust */
 		if (state->scores[player_id] > 21)
 		{
-			ustand = 1;
-			uhit = 0;
+			ustand = TRUE;
+			uhit = FALSE;
 		}
 
 		if (uhit) /* Hit for another card */
 		{
 			drawcard(state, state->current, strlen(state->hands[state->current]));
 			state->scores[state->current] = score(state->hands[state->current], 0);
-			uhit = 0;
 		}
 		else if (ustand) /* Stand with current hand */
 		{
@@ -391,6 +385,13 @@ int main(int argc, char **argv)
 	if (hflag)
 		help(argv[0]);
 
+	printf("Please input your name [20 character limit]:\n");
+	if (fgets(name, sizeof(name), stdin) == NULL)
+	{
+		perror("fgets error");
+		exit(-1);
+	}
+
 	if (nclient > 0)
 	{
 		if (nclient + 1 > PLAYERS_MAX)
@@ -405,10 +406,10 @@ int main(int argc, char **argv)
 		state.current = 0;
 		deal(&state);
 
-		psc_run(&state, sizeof(state), &loop, nclient);
+		psc_run(&state, sizeof(state), &init, &loop, &fin,nclient);
 	}
 	else
-		psc_run(&state, sizeof(state), &loop, 0);
+		psc_run(&state, sizeof(state), &init, &loop, &fin, 0);
 
 	return 0;
 }

@@ -11,15 +11,15 @@ blackjack: bin/blackjack
 
 lib/libpsc.so: build/psc.o
 	mkdir -p lib
-	$(CC) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LDLIBS)
+	$(CC) -shared -o $@ $^ $(CFLAGS) -lpthread
 
 bin/%: build/%.o lib/libpsc.so
 	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc
+	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc -L$(CURSESPATH) $(CURSESLIB)
 
 build/%.o: src/cmd/%.c
 	mkdir -p build
-	$(CC) -c -o $@ $< $(CFLAGS) -Iinclude/
+	$(CC) -c -o $@ $< $(CFLAGS) -I$(CURSESINC) -Iinclude/
 
 build/%.o: src/lib/%.c
 	mkdir -p build

@@ -2,17 +2,17 @@
 
 ![](https://github.com/lewis-weinberger/psc/workflows/build/badge.svg)
 
-> A very simple multiplayer turn-based terminal game library.
+> A very basic multiplayer game library.
 
-This library was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The text-based graphics and leisurely turn-based gameplay were deliberately chosen to support low bandwidth/latency internet connections.
+This library was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The primary use-case is for making terminal games with leisurely turn-based gameplay and text-based graphics in support of low bandwidth/latency internet connections.
 
-[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library handles communication between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads) for concurrency and [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)) for user interface design.
+[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library handles communication between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads) for concurrency. It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the examples games use this for their interface design.
 
 **DISCLAIMER**: *work-in-progress*, use at your own peril.
 
 ## Installation
 
-The library and example games are written in C for POSIX-compliant operating systems. Apart from a C compiler, the only other dependency is the curses library (for example the [ncurses](https://invisible-island.net/ncurses/#downloads) implementation).
+The library and example games are written in C for POSIX-compliant operating systems. Apart from a C compiler, the only other dependency (for the example games) is the [ncurses](https://invisible-island.net/ncurses/#downloads) library.
 
 Edit [config.mk](./config.mk) to suit your system setup, then use the provided [Makefile](./Makefile) to build the library and games:
 
@@ -22,7 +22,7 @@ cd psc
 make
 ```
 
-This will create directories `lib/` and `bin/` containing the library and games respectively. By default the games link to the library dynamically. To make an individual game, use `make game` (substituting `game` for your desired game).
+This will create directories `lib/` and `bin/` containing the library and games respectively. By default the games link to the library dynamically. To make just the library, use `make lib`. To make an individual game, use `make game` (substituting `game` for your desired game).
 
 To install system-wide, use:
 
