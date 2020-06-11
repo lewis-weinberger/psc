@@ -1,12 +1,13 @@
-# psc [THIS BRANCH IS IN DEVELOPMENT]
+# psc
 
 ![](https://github.com/lewis-weinberger/psc/workflows/build/badge.svg)
 
-> A very basic multiplayer game library.
+> A *very* basic multiplayer game library.
 
 This library was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The primary use-case is for making terminal games with leisurely turn-based gameplay and text-based graphics in support of low bandwidth/latency internet connections.
 
-[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library handles communication between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads) for concurrency. It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the example games use this for their interface design.
+[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library shares game state concurrently between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads). It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the example games use this for their interface design. Note that, at less than 500 SLOC, the library is very minimal &mdash; proper synchronisation of game state needs to be enforced by the user.
+
 
 **DISCLAIMER**: *work-in-progress*, use at your own peril.
 
@@ -32,14 +33,17 @@ make install
 
 By default this installs the (shared) library, games and manual page to `/usr/local` (see [config.mk](./config.mk)).
 
-Build artefacts (compiled object files) will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files. Similarly, `make uninstall` will remove installed files. Note that `make` needs to be run from the root directory of the repository.
+Any intermediate build artefacts that are not automagically removed by `make` will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files. Similarly, `make uninstall` will remove installed files. Note that `make` needs to be run from the root directory of the repository.
 
 ## Documentation
 
 Details of how to use the library can be found in [psc(3)](./man/man3/psc.3):
 
 ```sh
-man psc # assuming make install has put psc.3 somewhere on your MANPATH
+# assuming `make install` has put psc.3 somewhere on your MANPATH
+man psc
+# otherwise try
+man ./man/man3/psc.3
 ```
 
 Usage of the example games can be listed with the `-h` switch, for example:
@@ -50,7 +54,7 @@ blackjack -h
 
 will print:
 
-```sh
+```
 usage: blackjack [-h] [-n nclient]
 -h:
         prints this help
