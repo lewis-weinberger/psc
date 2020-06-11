@@ -156,7 +156,7 @@ void printdeal(game *state, int plid)
 		}
 	}
 	else if (state->current == plid)
-		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick->");
+		mvaddstr(1, 1, "BLACKJACK    > Your Turn! Press [H] to hit, or [S] to stick.");
 	else if (state->scores[plid] > 21)
 		mvaddstr(1, 1, "BLACKJACK    > BUST!!!");
 	else
@@ -254,6 +254,7 @@ void input(void)
 	}
 }
 
+/* Initialise terminal screen */
 int init(void)
 {
 	setlocale(LC_ALL, "");
@@ -264,14 +265,18 @@ int init(void)
 	keypad(stdscr, TRUE);
 	curs_set(0);
 	clear();
+	mvaddstr(0, 0, "Waitin for other players...");
+	refresh();
 	return 0;
 }
 
+/* Return terminal screen to normal state */
 void fin(void)
 {
 	endwin();
 }
 
+/* Game loop */
 int loop(void *in, int state_changed, int player_id)
 {
 	game *state;
@@ -409,7 +414,10 @@ int main(int argc, char **argv)
 		psc_run(&state, sizeof(state), &init, &loop, &fin,nclient);
 	}
 	else
+	{
+		memset(&state, 0, sizeof(state));
 		psc_run(&state, sizeof(state), &init, &loop, &fin, 0);
+	}
 
 	return 0;
 }

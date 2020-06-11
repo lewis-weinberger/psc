@@ -6,7 +6,7 @@
 
 This library was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The primary use-case is for making terminal games with leisurely turn-based gameplay and text-based graphics in support of low bandwidth/latency internet connections.
 
-[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library handles communication between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads) for concurrency. It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the examples games use this for their interface design.
+[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library handles communication between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads) for concurrency. It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the example games use this for their interface design.
 
 **DISCLAIMER**: *work-in-progress*, use at your own peril.
 
@@ -32,7 +32,7 @@ make install
 
 By default this installs the (shared) library, games and manual page to `/usr/local` (see [config.mk](./config.mk)).
 
-Build artefacts (compiled object files) will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files. Similarly, `make uninstall` will remove installed files.
+Build artefacts (compiled object files) will be stored in a `build/` directory. Use `make clean` to remove the compiled executables and object files. Similarly, `make uninstall` will remove installed files. Note that `make` needs to be run from the root directory of the repository.
 
 ## Documentation
 

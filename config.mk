@@ -9,7 +9,7 @@ MANPREFIX = $(PREFIX)/share/man
 
 # Curses
 CURSESINC = /usr/include
-CURSESPATH = /usr/lib
+CURSESPATH = /usr/lib64
 CURSESLIB = -lncurses -ltinfo
 
 # Compiler flags

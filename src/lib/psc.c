@@ -58,20 +58,30 @@ static int  stoc(int, void*, size_t);
 /*
  * Run game loop.
  * game: pointer to game state.
+ * len: size of game state in bytes.
+ * init: function to execute prior to starting game loop.
  * loop: function to execute at each game loop.
+ * fin: function to execute after finish of game loop.
  * nclient: number of clients (should be > 0 for server caller).
  */
 void psc_run(void *game, size_t len, psc_init init, psc_loop loop,  psc_fin fin, int nclient)
 {
+	if((log = fopen("psc.log", "a")) == NULL)
+		log = stderr;
+
+	if (game == NULL || len <= 0 || init == NULL || loop == NULL || fin == NULL || nclient < 0)
+	{
+		log_error("incorrect call to psc_run", PLACE);
+		fclose(log);
+		return;
+	}
+
 	state.game = game;
 	state.len = len;
 	pthread_mutex_init(&state.mutex, NULL);
 
 	status.exit = FALSE;
 	pthread_mutex_init(&status.mutex, NULL);
-
-	if((log = fopen("psc.log", "a")) == NULL)
-		log = stderr;
 
 	if (nclient > 0)
 	{
@@ -123,8 +133,16 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 	int i, ret, state_changed, exit;
 	void *previous;
 
-	previous = emalloc(state.len);
-	memcpy(previous, state.game, state.len);
+	/* User initialisation */
+	if (init() < 0)
+	{
+		log_error("user init failed", PLACE);
+		return;
+	}
+
+	/* Signal handling: TODO */
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGWINCH, SIG_IGN);
 
 	/* Connect to clients */
 	socket_init(nclient);
@@ -140,13 +158,8 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 		}
 	}
 
-	/* User initialisation */
-	if (init() < 0)
-	{
-		log_error("user init failed", PLACE);
-		socket_fin();
-		return;
-	}
+	previous = emalloc(state.len);
+	memcpy(previous, state.game, state.len);
 
 	/* Run game loop */
 	for (;;)
@@ -166,9 +179,11 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 		pthread_mutex_lock(&state.mutex);
 		state_changed = FALSE;
 		if (memcmp(previous, state.game, state.len) != 0)
+		{
 			state_changed = TRUE;
+			memcpy(previous, state.game, state.len);
+		}
 		ret = loop(state.game, state_changed, nclient);
-		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
 
 		/* User quit? */
@@ -181,9 +196,12 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 				pthread_join(tid[i], NULL);
 			break;
 		}
+
+		/* TODO: tick time? */
 	}
 
 	/* Clean-up */
+	free(previous);
 	socket_fin();
 	fin();
 }
@@ -194,8 +212,16 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 	pthread_t thread;
 	void *previous;
 
-	previous = emalloc(state.len);
-	memcpy(previous, state.game, state.len);
+	/* User initialisation */
+	if (init() < 0)
+	{
+		log_error("user init failed", PLACE);
+		return;
+	}
+
+	/* Signal handling: TODO */
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGWINCH, SIG_IGN);
 
 	/* Connect to server */
 	socket_connect();
@@ -203,13 +229,8 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 	log_error("* Connected to server", NULL);
 	pthread_create(&thread, NULL, &client_update, NULL);
 
-	/* User initialisation */
-	if (init() < 0)
-	{
-		log_error("user init failed", PLACE);
-		close(sfd);
-		return;
-	}
+	previous = emalloc(state.len);
+	memcpy(previous, state.game, state.len);
 
 	/* Run game loop */
 	for (;;)
@@ -228,9 +249,11 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 		pthread_mutex_lock(&state.mutex);
 		state_changed = FALSE;
 		if (memcmp(previous, state.game, state.len) != 0)
+		{
 			state_changed = TRUE;
+			memcpy(previous, state.game, state.len);
+		}
 		ret = loop(state.game, state_changed, player_id);
-		memcpy(previous, state.game, state.len);
 		pthread_mutex_unlock(&state.mutex);
 
 		/* User quit? */
@@ -242,9 +265,12 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 			pthread_join(thread, NULL);
 			break;
 		}
+
+		/* TODO: tick time? */
 	}
 
 	/* Clean-up */
+	free(previous);
 	close(sfd);
 	fin();
 }
@@ -343,7 +369,10 @@ static void *server_update(void *arg)
 		alt = memcmp(previous, state.game, state.len);
 		stoc(client, &alt, sizeof(int));
 		if (alt != 0)
+		{
 			stoc(client, state.game, state.len);
+			memcpy(previous, state.game, state.len);
+		}
 
 		/* Receive any changes from client */
 		sfromc(client, &alt, sizeof(int));
@@ -367,8 +396,8 @@ static void *client_update(void *arg)
 
 	pthread_mutex_lock(&state.mutex);
 	previous = emalloc(state.len);
-	memcpy(previous, state.game, state.len);
 	cfroms(state.game, state.len);
+	memcpy(previous, state.game, state.len);
 	pthread_mutex_unlock(&state.mutex);
 
 	for (;;)
@@ -394,7 +423,10 @@ static void *client_update(void *arg)
 		alt = memcmp(previous, state.game, state.len);
 		ctos(&alt, sizeof(int));
 		if (alt != 0)
+		{
 			ctos(state.game, state.len);
+			memcpy(previous, state.game, state.len);
+		}
 
 		pthread_mutex_unlock(&state.mutex);
 	}

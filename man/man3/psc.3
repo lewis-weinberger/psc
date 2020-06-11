@@ -1,30 +1,38 @@
 .TH PSC 3 "June 2020"
 .SH NAME
 .PP
-psc \- a very simple multiplayer turn\-based terminal game library.
+psc \- a very simple multiplayer game library.
 .SH SYNOPSIS
 .PP
 .B
 #inclue <psc.h>
 .PP
 .B
-typedef int (*psc_loop)(void *\f[I]state\f[], int \f[I]state_changed\f[], int \f[I]player_id\f[], int \f[I]input\f[]);
+typedef int (*psc_init)(void);
+.br
+.B
+typedef int (*psc_loop)(void *\f[I]state\f[], int \f[I]state_changed\f[], int \f[I]player_id\f[]);
+.br
+.B
+typedef void (*psc_fin)(void);
 .PP
 .B
-void psc_run(void *\f[I]state\f[], size_t \f[I]len\f[], psc_loop \f[I]loop\f[], int \f[I]nclient\f[]);
-.PP
-.B
-int psc_draw(int \f[I]y\f[], int \f[I]x\f[], int \f[I]n\f[], char \f[I]str\f[][]);
+void psc_run(void *\f[I]state\f[], size_t \f[I]len\f[], psc_init \f[I]init\f[], psc_loop \f[I]loop\f[], psc_fin \f[I]fin\f[], int \f[I]nclient\f[]);
 .SH DESCRIPTION
 .PP
-This library provides only two functions for creating multiplayer terminal
+This library provides only one function for creating multiplayer terminal
 games. It uses a server-client model for connecting players together.
 .PP
 .BI psc_run()
 starts the main game loop. This function takes a number of arguments which allow
 the user to specify the game\-play. \f[I]state\f[] is a pointer to the game state,
-which should be \f[I]len\f[] bytes in size. This game state will be shared between the server
-instance and any connected clients. \f[I]loop\f[] is a pointer to a function which is called
+which should be \f[I]len\f[] bytes in size, pre-allocated and initialised prior to
+calling \f[BI]psc_run()\f[]. This game state will be shared between the server
+instance and any connected clients.
+\f[I]init\f[] is a pointer to a function which is called once before starting the
+game loop, to allow the user to perform any necessary initialisations (such as
+preparing the terminal screen). On failure this function should return -1.
+\f[I]loop\f[] is a pointer to a function which is called
 once per game loop, with access to the current game state. It takes as arguments:
 .TP
 void *\f[I]state\f[]
@@ -41,33 +49,21 @@ int \f[I]player_id\f[]
 .RS
 a unique identifier for this player.
 .RE
-.TP
-int \f[I]input\f[]
-.RS
-the latest keyboard input, ERR otherwise. See
-.IR getch(3).
-.RE
 .PP
 \f[I]loop\f[] should return a positive integer to continue to the next loop,
-or a negative integer to end the main game loop. The final argument to \f[B]psc_run()\f[]
+or a negative integer to end the main game loop.
+\f[I]init\f[] is a pointer to a function which is called after the game loop has
+finished, to clean up any resources allocated by \f[I]init\f[]. This function is
+required to ensure the application can cleanly exit.
+The final argument to \f[B]psc_run()\f[]
 is \f[I]nclients\f[], which indicates
 how many clients will connect to the server: this should be an integer greater than
 zero for the server instance, and zero for any client instances.
-.PP
-.BI psc_draw()
-provides a thin wrapper around the curses drawing routines.
-It will draw up to \f[I]n\f[] bytes of \f[I]str\f[] at position
-(\f[I]x\f[], \f[I]y\f[]) on the terminal. On success it returns the number of
-bytes written, on failure it will return -1.
 .SH NOTES
 .PP
 The user-defined \f[I]loop\f[] function can use the \f[I]player_id\f[]
 to avoid making overlapping changes to the game state, for example using a turn-based
 gameplay mechanic.
-.PP
-The terminal coordinates are defined such that x starts from
-zero at the left-most column of the terminal, whilst y starts from zero at
-the top-most row of the terminal.
 .PP
 When \f[B]psc_run()\f[] is called, it will open a log file 'psc.log' in the
 working directory. This file will record information such as errors and successful
@@ -75,31 +71,16 @@ connections.
 .PP
 Currently only basic signal handling is implemented. The following signal interrupts
 are handled internally, causing the game to exit cleanly:
-.TP
 .B SIGTERM
-.RS
-Terminal interrupt (commonly ^C).
-.RE
-.TP
+,
 .B SIGINT
-.RS
-Terminal interrupt (commonly ^C).
-.RE
-.TP
+,
 .B SIGQUIT
-.RS
-Terminal interrupt (commonly ^\).
-.RE
-.TP
+, and
+.B SIGPIPE.
 .B SIGWINCH
-.RS
-Window size change.
-.RE
-.TP
-.B SIGPIPE
-.RS
-Broken pipe (socket connection closed at read end).
-.RE
+is simply ignored. Note that signal handling is established after the call to the user
+defined \f[I]init()\f[] function, so any user defined signal handling will be overriden.
 .SH SEE ALSO
 .IR curses(3)
 .SH BUGS

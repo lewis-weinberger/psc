@@ -15,7 +15,7 @@ lib/libpsc.so: build/psc.o
 
 bin/%: build/%.o lib/libpsc.so
 	mkdir -p bin
-	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc -L$(CURSESPATH) $(CURSESLIB)
+	$(CC) -o $@ $^ $(CFLAGS) -Llib -lpsc -Wl,-rpath,lib -L$(CURSESPATH) $(CURSESLIB)
 
 build/%.o: src/cmd/%.c
 	mkdir -p build
