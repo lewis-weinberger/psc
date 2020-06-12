@@ -69,6 +69,14 @@ When \f[B]psc_run()\f[] is called, it will open a log file 'psc.log' in the
 working directory. This file will record information such as errors and successful
 connections.
 .PP
+The library handles the following terminations of game instances:
+(i) if either server or client(s) exit cleanly (i.e. as determined by the user's \f[I]loop\f[]
+returning negative), then all other instances also exit cleanly; (ii) if a client instance
+disconnects as a result of unexpected exit (see signal handling details below),
+the server will wait for a new client to replace
+the original; (iii) if a server instance disconnects as a result of an unexpected exit, all
+client instances will exit.
+.PP
 Currently only basic signal handling is implemented. The following signal interrupts
 are handled internally, causing the game to exit cleanly:
 .B SIGTERM
