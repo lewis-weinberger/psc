@@ -12,7 +12,6 @@ enum
         PLAYERS_MAX = 8,
         CARDS_MAX = 52,
         TICK_TIME = 50,
-        QUIT = -1,
 };
 
 /* Store game state in null-terminated strings */

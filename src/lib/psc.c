@@ -29,7 +29,9 @@ typedef struct
 
 typedef struct
 {
-	int             exit;
+	int             exit; /* bad */
+	int             quit; /* good */
+	int             id;
 	pthread_mutex_t mutex;
 } psc_status;
 
@@ -49,6 +51,8 @@ static void *emalloc(size_t);
 static void log_error(const char*, const char*);
 static void server_main(psc_init, psc_loop, psc_fin, int);
 static void *server_update(void*);
+//static void *signal_handler(void*);
+//static void signal_setup(void);
 static int  sfromc(int, void*, size_t);
 static void socket_connect(void);
 static void socket_init(int);
@@ -81,6 +85,8 @@ void psc_run(void *game, size_t len, psc_init init, psc_loop loop,  psc_fin fin,
 	pthread_mutex_init(&state.mutex, NULL);
 
 	status.exit = FALSE;
+	status.quit = FALSE;
+	status.id = -1;
 	pthread_mutex_init(&status.mutex, NULL);
 
 	if (nclient > 0)
@@ -130,7 +136,7 @@ static void error_handler(const char *str, const char* place)
 
 static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 {
-	int i, ret, state_changed, exit;
+	int i, ret, state_changed, exit, dead, quit;
 	void *previous;
 
 	/* User initialisation */
@@ -167,12 +173,37 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 		/* Check for exit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
+		dead = status.id;
 		pthread_mutex_unlock(&status.mutex);
 		if (exit)
 		{
 			for (i = 0; i < nclient; i++)
 				pthread_join(tid[i], NULL);
 			break;
+		}
+
+		/* Check for disconnection from other clients */
+		for (i = 0; i < nclient; i++)
+		{
+			if (cfd[i] == dead)
+			{
+				pthread_join(tid[i], NULL);
+				close(dead);
+
+				/* Reconnect and spawn new thread */
+				if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
+					log_error("accept error", PLACE);
+				else
+				{
+					stoc(cfd[i], &i, sizeof(i));
+					log_error("* Client reconnected", NULL);
+					pthread_create(&tid[i], NULL, &server_update, &cfd[i]);
+
+					pthread_mutex_lock(&status.mutex);
+					status.id = dead = -1;
+					pthread_mutex_unlock(&status.mutex);
+				}
+			}
 		}
 
 		/* Evaluate user defined procedure */
@@ -187,11 +218,13 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 		pthread_mutex_unlock(&state.mutex);
 
 		/* User quit? */
+		pthread_mutex_lock(&status.mutex);
 		if (ret < 0)
+			status.quit = TRUE;
+		quit = status.quit;
+		pthread_mutex_unlock(&status.mutex);
+		if (quit)
 		{
-			pthread_mutex_lock(&status.mutex);
-			status.exit = TRUE;
-			pthread_mutex_unlock(&status.mutex);
 			for (i = 0; i < nclient; i++)
 				pthread_join(tid[i], NULL);
 			break;
@@ -208,7 +241,7 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 
 static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 {
-	int ret, state_changed, player_id, exit;
+	int ret, state_changed, player_id, exit, quit;
 	pthread_t thread;
 	void *previous;
 
@@ -257,14 +290,17 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 		pthread_mutex_unlock(&state.mutex);
 
 		/* User quit? */
+		pthread_mutex_lock(&status.mutex);
 		if (ret < 0)
+			status.quit = TRUE;
+		quit = status.quit;
+		pthread_mutex_unlock(&status.mutex);
+		if (quit)
 		{
-			pthread_mutex_lock(&status.mutex);
-			status.exit = TRUE;
-			pthread_mutex_unlock(&status.mutex);
 			pthread_join(thread, NULL);
 			break;
 		}
+
 
 		/* TODO: tick time? */
 	}
@@ -272,6 +308,7 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 	/* Clean-up */
 	free(previous);
 	close(sfd);
+	log_error("* Client closed", NULL);
 	fin();
 }
 
@@ -343,7 +380,7 @@ static void socket_fin(void)
 
 static void *server_update(void *arg)
 {
-	int alt, client, exit;
+	int alt, client, exit, id, quit;
 	void *previous;
 
 	client = *(int *)arg;
@@ -356,11 +393,22 @@ static void *server_update(void *arg)
 
 	for (;;)
 	{
-		/* Check for exit from other threads */
+		/* Check for exit or quit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
+		id = status.id;
+		quit = status.quit;
 		pthread_mutex_unlock(&status.mutex);
-		if (exit)
+		stoc(client, &quit, sizeof(quit));
+		if (!quit)
+		{
+			sfromc(client, &quit, sizeof(quit));
+			pthread_mutex_lock(&status.mutex);
+			status.quit = quit;
+			pthread_mutex_unlock(&status.mutex);
+		}
+
+		if (quit || exit || id == client)
 			break;
 
 		pthread_mutex_lock(&state.mutex);
@@ -391,7 +439,7 @@ static void *server_update(void *arg)
 
 static void *client_update(void *arg)
 {
-	int alt, exit;
+	int alt, exit, quit, sendquit;
 	void *previous;
 
 	pthread_mutex_lock(&state.mutex);
@@ -402,11 +450,21 @@ static void *client_update(void *arg)
 
 	for (;;)
 	{
+		/* Check for quit */
+		cfroms(&quit, sizeof(quit));
+		sendquit = !quit;
+
 		/* Check for exit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
+		if (quit)
+			status.quit = quit;
+		else
+			quit = status.quit;
 		pthread_mutex_unlock(&status.mutex);
-		if (exit)
+		if (sendquit)
+			ctos(&quit, sizeof(quit));
+		if (quit || exit)
 			break;
 
 		pthread_mutex_lock(&state.mutex);
@@ -439,12 +497,27 @@ static int sfromc(int client, void *msg, size_t len)
 {
 	int n;
 
-	if ((n = read(client, msg, len)) <= 0)
+	if ((n = read(client, msg, len)) < 0)
 	{
 		if (errno == EINTR) /* Interrupted... try again */
 			sfromc(client, msg, len);
+		else if (errno == ECONNRESET) /* Client disconnected */
+		{
+			log_error("* Client disconnect", strerror(errno));
+			pthread_mutex_lock(&status.mutex);
+			status.id = client;
+			pthread_mutex_unlock(&status.mutex);
+		}
 		else
-			error_handler("read error", PLACE);
+			error_handler("read error", strerror(errno));
+	}
+
+	if (n == 0) /* Client disconnected */
+	{
+		pthread_mutex_lock(&status.mutex);
+		status.id = client;
+		pthread_mutex_unlock(&status.mutex);
+		log_error("* Client disconnect", "read");
 	}
 	return n;
 }
@@ -457,8 +530,15 @@ static int stoc(int client, void *msg, size_t len)
 	{
 		if (errno == EINTR) /* Interrupted... try again */
 			stoc(client, msg, len);
+		else if (errno == EPIPE) /* Client disconnected */
+		{
+			pthread_mutex_lock(&status.mutex);
+			status.id = client;
+			pthread_mutex_unlock(&status.mutex);
+			log_error("* Client disconnect", "write");
+		}
 		else
-			error_handler("write error", PLACE);
+			error_handler("write error", strerror(errno));
 	}
 	return n;
 }
@@ -472,7 +552,7 @@ static int cfroms(void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			cfroms(msg, len);
 		else
-			error_handler("read error", PLACE);
+			error_handler("read error", strerror(errno));
 	}
 	return n;
 }
@@ -486,7 +566,7 @@ static int ctos(void *msg, size_t len)
 		if (errno == EINTR) /* Interrupted... try again */
 			ctos(msg, len);
 		else
-			error_handler("write error", PLACE);
+			error_handler("write error", strerror(errno));
 	}
 	return n;
 }
