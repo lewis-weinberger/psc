@@ -6,10 +6,7 @@
 
 This library was created for playing multiplayer games either locally on the same machine or remotely via, for example, an [ssh(1)](https://man.openbsd.org/ssh) connection. The primary use-case is for making terminal games with leisurely turn-based gameplay and text-based graphics in support of low bandwidth/latency internet connections.
 
-[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library shares game state concurrently between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads). It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the example games use this for their interface design. Note that, at less than 500 SLOC, the library is very minimal &mdash; proper synchronisation of game state needs to be enforced by the user.
-
-
-**DISCLAIMER**: *work-in-progress*, use at your own peril.
+[UNIX domain sockets](https://en.wikipedia.org/wiki/Unix_domain_socket) are used for communication between the different game instances (running on the same machine), using a client-server model. The library shares game state concurrently between a server instance and the client games, using [POSIX threads](https://en.wikipedia.org/wiki/POSIX_Threads). It works well in tandem with a TUI library such as [curses](https://en.wikipedia.org/wiki/Curses_(programming_library)), and indeed the example games use this for their interface design. Note that, at less than 800 SLOC, the library is very minimal &mdash; proper synchronisation of game state needs to be enforced by the user.
 
 ## Installation
 
