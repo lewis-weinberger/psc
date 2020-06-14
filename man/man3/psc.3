@@ -93,6 +93,12 @@ defined \f[I]init()\f[] function, so any user defined signal handling will be ov
 .SH SEE ALSO
 .IR curses(3)
 .SH BUGS
+.PP
+The signals mentioned above (SIGINT, SIGTERM, SIGQUIT) are not handled during the connection
+phase, when the server is waiting for clients to connect to the socket (and prior to the
+beginning of the main game loop). A workaround to interrupt programs in this state is to
+send another signal, e.g. SIGALRM.
+.PP
 Please post an issue on the repository \f[BI]https://github.com/lewis-weinberger/psc\f[].
 .SH AUTHORS
 Lewis Weinberger.

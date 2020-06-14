@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -20,6 +21,8 @@
 #define TOSTRING(x) STRINGIFY(x)
 #define PLACE __FILE__ ":" TOSTRING(__LINE__)
 
+#define TICK 10 /* Minimum loop time for threads, in ms */
+
 enum
 {
 	KILO = 1000,
@@ -38,7 +41,8 @@ typedef struct
 {
 	int             exit; /* bad */
 	int             quit; /* good */
-	int             id;
+	int             *id;
+	int             idn;
 	pthread_mutex_t mutex;
 } psc_status;
 
@@ -48,7 +52,8 @@ static psc_status status;
 static pthread_t *tid, sigthread;
 static int *cfd, sfd;
 static struct sockaddr_un addr;
-const  char socket_path[] = "/tmp/psc_socket";
+static const  char socket_path[] = "/tmp/psc_socket";
+static sigset_t *sig_set;
 
 static int  cfroms(void*, size_t);
 static void client_main(psc_init, psc_loop, psc_fin, int);
@@ -78,6 +83,8 @@ static int  stoc(int, void*, size_t);
 void psc_run(void *game, size_t len, psc_init init, psc_loop loop,
              psc_fin fin, int nclient, int tick)
 {
+	int i;
+
 	if((log = fopen("psc.log", "a")) == NULL)
 		log = stderr;
 
@@ -95,17 +102,23 @@ void psc_run(void *game, size_t len, psc_init init, psc_loop loop,
 
 	status.exit = FALSE;
 	status.quit = FALSE;
-	status.id = -1;
+	status.idn = nclient;
 	pthread_mutex_init(&status.mutex, NULL);
 
 	if (nclient > 0)
 	{
 		tid = emalloc(nclient * sizeof(pthread_t));
 		cfd = emalloc(nclient * sizeof(int));
+		status.id = emalloc(status.idn * sizeof(int));
 		memset(cfd, 0, nclient * sizeof(int));
+		for (i = 0; i < nclient; i++)
+			status.id[i] = -1;
+
 		server_main(init, loop, fin, nclient, tick);
+
 		free(tid);
 		free(cfd);
+		free(status.id);
 	}
 	else if (nclient == 0)
 		client_main(init, loop, fin, tick);
@@ -146,7 +159,7 @@ static void error_handler(const char *str, const char* place)
 static void server_main(psc_init init, psc_loop loop, psc_fin fin,
                         int nclient, int tick)
 {
-	int i, ret, state_changed, exit, dead, quit;
+	int i, j, ret, state_changed, exit, *dead, quit;
 	void *previous;
 	struct timeval start, end;
 	struct timespec dt;
@@ -178,6 +191,7 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin,
 
 	previous = emalloc(state.len);
 	memcpy(previous, state.game, state.len);
+	dead = emalloc(nclient * sizeof(int));
 
 	/* Run game loop */
 	for (;;)
@@ -187,35 +201,39 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin,
 		/* Check for exit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
-		dead = status.id;
+		memcpy(dead, status.id, status.idn * sizeof(int));
 		pthread_mutex_unlock(&status.mutex);
 		if (exit)
 		{
 			for (i = 0; i < nclient; i++)
 				pthread_join(tid[i], NULL);
+			pthread_join(sigthread, NULL);
 			break;
 		}
 
 		/* Check for disconnection from other clients */
 		for (i = 0; i < nclient; i++)
 		{
-			if (cfd[i] == dead)
+			for (j = 0; j < nclient; j++)
 			{
-				pthread_join(tid[i], NULL);
-				close(dead);
-
-				/* Reconnect and spawn new thread */
-				if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
-					log_error("accept error", PLACE);
-				else
+				if (cfd[i] == dead[j])
 				{
-					stoc(cfd[i], &i, sizeof(i));
-					log_error("* Client reconnected", NULL);
-					pthread_create(&tid[i], NULL, &server_update, &cfd[i]);
+					pthread_join(tid[i], NULL);
+					close(dead[j]);
 
-					pthread_mutex_lock(&status.mutex);
-					status.id = dead = -1;
-					pthread_mutex_unlock(&status.mutex);
+					/* Reconnect and spawn new thread */
+					if ((cfd[i] = accept(sfd, NULL, NULL)) < 0)
+						log_error("accept error", PLACE);
+					else
+					{
+						stoc(cfd[i], &i, sizeof(i));
+						log_error("* Client reconnected", NULL);
+						pthread_create(&tid[i], NULL, &server_update, &cfd[i]);
+
+						pthread_mutex_lock(&status.mutex);
+						status.id[j] = dead[j] = -1;
+						pthread_mutex_unlock(&status.mutex);
+					}
 				}
 			}
 		}
@@ -241,6 +259,7 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin,
 		{
 			for (i = 0; i < nclient; i++)
 				pthread_join(tid[i], NULL);
+			pthread_join(sigthread, NULL);
 			break;
 		}
 
@@ -255,6 +274,7 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin,
 
 	/* Clean-up */
 	free(previous);
+	free(dead);
 	socket_fin();
 	fin();
 }
@@ -299,6 +319,7 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin, int tick)
 		if (exit)
 		{
 			pthread_join(thread, NULL);
+			pthread_join(sigthread, NULL);
 			break;
 		}
 
@@ -322,6 +343,7 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin, int tick)
 		if (quit)
 		{
 			pthread_join(thread, NULL);
+			pthread_join(sigthread, NULL);
 			break;
 		}
 
@@ -409,22 +431,23 @@ static void socket_fin(void)
 
 static int signal_setup(void)
 {
-	sigset_t set;
-
-	sigemptyset(&set);
-	sigaddset(&set, SIGINT);
-	sigaddset(&set, SIGTERM);
-	sigaddset(&set, SIGQUIT);
-	sigaddset(&set, SIGPIPE);
-	sigaddset(&set, SIGWINCH);
-	if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0)
+	sig_set = emalloc(sizeof(sigset_t));
+	sigemptyset(sig_set);
+	sigaddset(sig_set, SIGINT);
+	sigaddset(sig_set, SIGTERM);
+	sigaddset(sig_set, SIGQUIT);
+	sigaddset(sig_set, SIGPIPE);
+	sigaddset(sig_set, SIGWINCH);
+	if (pthread_sigmask(SIG_BLOCK, sig_set, NULL) != 0)
 	{
 		log_error("sigmask", strerror(errno));
+		free(sig_set);
 		return -1;
 	}
-	if (pthread_create(&sigthread, NULL, &signal_handler, (void *)&set) != 0)
+	if (pthread_create(&sigthread, NULL, &signal_handler, NULL) != 0)
 	{
 		log_error("signal handling", strerror(errno));
+		free(sig_set);
 		return -1;
 	}
 	return 0;
@@ -432,14 +455,12 @@ static int signal_setup(void)
 
 static void *signal_handler(void *arg)
 {
-	sigset_t *set;
 	siginfo_t info;
 	struct timespec timeout;
-	int sig, quit, exit;
+	int quit, exit;
 
-	set = (sigset_t *)arg;
 	timeout.tv_sec = 0;
-	timeout.tv_nsec = 50 * MEGA; /* 50 ms */
+	timeout.tv_nsec = TICK * MEGA; /* ms */
 	for (;;)
 	{
 		/* Check for exit or quit from other threads */
@@ -451,28 +472,39 @@ static void *signal_handler(void *arg)
 			break;
 
 		/* Catch signals */
-		sig = sigtimedwait(set, &info, timeout);
-		switch (sig)
+		if (sigtimedwait(sig_set, &info, &timeout) < 0)
 		{
-			case SIGINT:
-			case SIGTERM:
-			case SIGQUIT:
-				pthread_mutex_lock(&status.mutex);
-				status.exit = TRUE;
-				pthread_mutex_unlock(&status.mutex);
-				log_error("Signal interruption", strsignal(sig));
-				break;
-			default:
-				break;
+			if (errno != EAGAIN)
+				log_error("sigtimedwait", strerror(errno));
+		}
+		else
+		{
+			switch (info.si_signo)
+			{
+				case SIGINT:
+				case SIGTERM:
+				case SIGQUIT:
+					pthread_mutex_lock(&status.mutex);
+					status.exit = TRUE;
+					pthread_mutex_unlock(&status.mutex);
+				case SIGPIPE:
+				case SIGWINCH:
+					log_error("Signal interruption", strsignal(info.si_signo));
+				default:
+					break;
+			}
 		}
 	}
+	free(sig_set);
 	return 0;
 }
 
 static void *server_update(void *arg)
 {
-	int alt, client, exit, id, quit;
+	int i, alt, client, exit, dead, quit;
 	void *previous;
+	struct timeval start, end;
+	struct timespec dt;
 
 	client = *(int *)arg;
 
@@ -484,10 +516,17 @@ static void *server_update(void *arg)
 
 	for (;;)
 	{
+		gettimeofday(&start, NULL);
+
 		/* Check for exit or quit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
-		id = status.id;
+		dead = FALSE;
+		for (i = 0; i < status.idn; i++)
+		{
+			if (status.id[i] == client)
+				dead = TRUE;
+		}
 		quit = status.quit;
 		pthread_mutex_unlock(&status.mutex);
 		stoc(client, &quit, sizeof(quit));
@@ -499,7 +538,7 @@ static void *server_update(void *arg)
 			pthread_mutex_unlock(&status.mutex);
 		}
 
-		if (quit || exit || id == client)
+		if (quit || exit || dead)
 			break;
 
 		pthread_mutex_lock(&state.mutex);
@@ -522,6 +561,12 @@ static void *server_update(void *arg)
 		}
 
 		pthread_mutex_unlock(&state.mutex);
+
+		gettimeofday(&end, NULL);
+		dt.tv_sec = start.tv_sec - end.tv_sec;
+		dt.tv_nsec = TICK * MEGA - (end.tv_usec - start.tv_usec) * KILO;
+		if (dt.tv_sec * GIGA + dt.tv_nsec > 0)
+			nanosleep(&dt, NULL);
 	}
 
 	free(previous);
@@ -532,6 +577,8 @@ static void *client_update(void *arg)
 {
 	int alt, exit, quit, sendquit;
 	void *previous;
+	struct timeval start, end;
+	struct timespec dt;
 
 	pthread_mutex_lock(&state.mutex);
 	previous = emalloc(state.len);
@@ -541,6 +588,8 @@ static void *client_update(void *arg)
 
 	for (;;)
 	{
+		gettimeofday(&start, NULL);
+
 		/* Check for quit */
 		cfroms(&quit, sizeof(quit));
 		sendquit = !quit;
@@ -578,6 +627,12 @@ static void *client_update(void *arg)
 		}
 
 		pthread_mutex_unlock(&state.mutex);
+
+		gettimeofday(&end, NULL);
+		dt.tv_sec = start.tv_sec - end.tv_sec;
+		dt.tv_nsec = TICK * MEGA - (end.tv_usec - start.tv_usec) * KILO;
+		if (dt.tv_sec * GIGA + dt.tv_nsec > 0)
+			nanosleep(&dt, NULL);
 	}
 
 	free(previous);
@@ -586,7 +641,7 @@ static void *client_update(void *arg)
 
 static int sfromc(int client, void *msg, size_t len)
 {
-	int n;
+	int n, i;
 
 	if ((n = read(client, msg, len)) < 0)
 	{
@@ -596,7 +651,14 @@ static int sfromc(int client, void *msg, size_t len)
 		{
 			log_error("* Client disconnect", strerror(errno));
 			pthread_mutex_lock(&status.mutex);
-			status.id = client;
+			for (i = 0; i < status.idn; i++)
+			{
+				if (status.id[i] == -1)
+				{
+					status.id[i] = client;
+					break;
+				}
+			}
 			pthread_mutex_unlock(&status.mutex);
 		}
 		else
@@ -606,7 +668,14 @@ static int sfromc(int client, void *msg, size_t len)
 	if (n == 0) /* Client disconnected */
 	{
 		pthread_mutex_lock(&status.mutex);
-		status.id = client;
+		for (i = 0; i < status.idn; i++)
+		{
+			if (status.id[i] == -1)
+			{
+				status.id[i] = client;
+				break;
+			}
+		}
 		pthread_mutex_unlock(&status.mutex);
 		log_error("* Client disconnect", "read");
 	}
@@ -615,7 +684,7 @@ static int sfromc(int client, void *msg, size_t len)
 
 static int stoc(int client, void *msg, size_t len)
 {
-	int n;
+	int n, i;
 
 	if ((n = write(client, msg, len)) < 0)
 	{
@@ -624,7 +693,14 @@ static int stoc(int client, void *msg, size_t len)
 		else if (errno == EPIPE) /* Client disconnected */
 		{
 			pthread_mutex_lock(&status.mutex);
-			status.id = client;
+			for (i = 0; i < status.idn; i++)
+			{
+				if (status.id[i] == -1)
+				{
+					status.id[i] = client;
+					break;
+				}
+			}
 			pthread_mutex_unlock(&status.mutex);
 			log_error("* Client disconnect", "write");
 		}
