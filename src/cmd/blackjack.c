@@ -264,7 +264,7 @@ int init(void)
 	keypad(stdscr, TRUE);
 	curs_set(0);
 	clear();
-	mvaddstr(0, 0, "Waitin for other players...");
+	mvaddstr(0, 0, "Waiting for other players...");
 	refresh();
 	return 0;
 }
