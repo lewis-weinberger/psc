@@ -28,10 +28,10 @@ build/%.o: src/lib/%.c
 clean:
 	rm -rf bin lib build
 
-install: lib/libpsc.o bin/blacjack man/man3/psc.3
+install: lib/libpsc.so bin/blackjack man/man3/psc.3
 	mkdir -p $(LIBPREFIX)
 	cp -f lib/libpsc.so $(LIBPREFIX)/libpsc.so
-	chmod 644 $(LIBPREFIX)/libpsc.so
+	chmod 755 $(LIBPREFIX)/libpsc.so
 	mkdir -p $(BINPREFIX)
 	cp -f bin/blackjack $(BINPREFIX)/blackjack
 	chmod 755 $(BINPREFIX)/blackjack
