@@ -410,12 +410,12 @@ int main(int argc, char **argv)
 		state.current = 0;
 		deal(&state);
 
-		psc_run(&state, sizeof(state), &init, &loop, &fin,nclient);
+		psc_run(&state, sizeof(state), &init, &loop, &fin, nclient, 100);
 	}
 	else
 	{
 		memset(&state, 0, sizeof(state));
-		psc_run(&state, sizeof(state), &init, &loop, &fin, 0);
+		psc_run(&state, sizeof(state), &init, &loop, &fin, 0, 100);
 	}
 
 	return 0;

@@ -20,6 +20,13 @@
 #define TOSTRING(x) STRINGIFY(x)
 #define PLACE __FILE__ ":" TOSTRING(__LINE__)
 
+enum
+{
+	KILO = 1000,
+	MEGA = 1000000,
+	GIGA = 1000000000,
+};
+
 typedef struct
 {
 	void            *game;
@@ -44,12 +51,12 @@ static struct sockaddr_un addr;
 const  char socket_path[] = "/tmp/psc_socket";
 
 static int  cfroms(void*, size_t);
-static void client_main(psc_init, psc_loop, psc_fin);
+static void client_main(psc_init, psc_loop, psc_fin, int);
 static void *client_update(void*);
 static int  ctos(void*, size_t);
 static void *emalloc(size_t);
 static void log_error(const char*, const char*);
-static void server_main(psc_init, psc_loop, psc_fin, int);
+static void server_main(psc_init, psc_loop, psc_fin, int, int);
 static void *server_update(void*);
 //static void *signal_handler(void*);
 //static void signal_setup(void);
@@ -68,12 +75,14 @@ static int  stoc(int, void*, size_t);
  * fin: function to execute after finish of game loop.
  * nclient: number of clients (should be > 0 for server caller).
  */
-void psc_run(void *game, size_t len, psc_init init, psc_loop loop,  psc_fin fin, int nclient)
+void psc_run(void *game, size_t len, psc_init init, psc_loop loop,
+             psc_fin fin, int nclient, int tick)
 {
 	if((log = fopen("psc.log", "a")) == NULL)
 		log = stderr;
 
-	if (game == NULL || len <= 0 || init == NULL || loop == NULL || fin == NULL || nclient < 0)
+	if (game == NULL || len <= 0 || init == NULL
+	    || loop == NULL || fin == NULL || nclient < 0 || tick < 0)
 	{
 		log_error("incorrect call to psc_run", PLACE);
 		fclose(log);
@@ -94,12 +103,12 @@ void psc_run(void *game, size_t len, psc_init init, psc_loop loop,  psc_fin fin,
 		tid = emalloc(nclient * sizeof(pthread_t));
 		cfd = emalloc(nclient * sizeof(int));
 		memset(cfd, 0, nclient * sizeof(int));
-		server_main(init, loop, fin, nclient);
+		server_main(init, loop, fin, nclient, tick);
 		free(tid);
 		free(cfd);
 	}
 	else if (nclient == 0)
-		client_main(init, loop, fin);
+		client_main(init, loop, fin, tick);
 	else
 		log_error("number of clients must be >= 0", PLACE);
 
@@ -134,10 +143,13 @@ static void error_handler(const char *str, const char* place)
 	pthread_mutex_unlock(&status.mutex);
 }
 
-static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
+static void server_main(psc_init init, psc_loop loop, psc_fin fin,
+                        int nclient, int tick)
 {
 	int i, ret, state_changed, exit, dead, quit;
 	void *previous;
+	struct timeval start, end;
+	struct timespec dt;
 
 	/* User initialisation */
 	if (init() < 0)
@@ -170,6 +182,8 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 	/* Run game loop */
 	for (;;)
 	{
+		gettimeofday(&start, NULL);
+
 		/* Check for exit from other threads */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
@@ -230,7 +244,13 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 			break;
 		}
 
-		/* TODO: tick time? */
+		/* Wait for user-defined minimum loop time */
+		gettimeofday(&end, NULL);
+		dt.tv_sec = (tick / KILO) - (end.tv_sec - start.tv_sec);
+		dt.tv_nsec = (tick % KILO) * MEGA
+		             - (end.tv_usec - start.tv_usec) * KILO;
+		if (dt.tv_sec * GIGA + dt.tv_nsec > 0)
+			nanosleep(&dt, NULL);
 	}
 
 	/* Clean-up */
@@ -239,11 +259,13 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin, int nclient)
 	fin();
 }
 
-static void client_main(psc_init init, psc_loop loop, psc_fin fin)
+static void client_main(psc_init init, psc_loop loop, psc_fin fin, int tick)
 {
 	int ret, state_changed, player_id, exit, quit;
 	pthread_t thread;
 	void *previous;
+	struct timeval start, end;
+	struct timespec dt;
 
 	/* User initialisation */
 	if (init() < 0)
@@ -268,6 +290,8 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 	/* Run game loop */
 	for (;;)
 	{
+		gettimeofday(&start, NULL);
+
 		/* Check for exit from other thread */
 		pthread_mutex_lock(&status.mutex);
 		exit = status.exit;
@@ -301,8 +325,13 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin)
 			break;
 		}
 
-
-		/* TODO: tick time? */
+		/* Wait for user-defined minimum loop time */
+		gettimeofday(&end, NULL);
+		dt.tv_sec = (tick / KILO) - (end.tv_sec - start.tv_sec);
+		dt.tv_nsec = (tick % KILO) * MEGA
+		             - (end.tv_usec - start.tv_usec) * KILO;
+		if (dt.tv_sec * GIGA + dt.tv_nsec > 0)
+			nanosleep(&dt, NULL);
 	}
 
 	/* Clean-up */

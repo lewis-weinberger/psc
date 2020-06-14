@@ -10,7 +10,7 @@ typedef int (*psc_init)(void);
 typedef int (*psc_loop)(void*, int, int);
 typedef void (*psc_fin)(void);
 
-void psc_run(void*, size_t, psc_init, psc_loop, psc_fin, int);
+void psc_run(void*, size_t, psc_init, psc_loop, psc_fin, int, int);
 
 #endif /* _PSC_H */
 

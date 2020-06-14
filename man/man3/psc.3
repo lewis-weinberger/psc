@@ -17,7 +17,7 @@ typedef int (*psc_loop)(void *\f[I]state\f[], int \f[I]state_changed\f[], int \f
 typedef void (*psc_fin)(void);
 .PP
 .B
-void psc_run(void *\f[I]state\f[], size_t \f[I]len\f[], psc_init \f[I]init\f[], psc_loop \f[I]loop\f[], psc_fin \f[I]fin\f[], int \f[I]nclient\f[]);
+void psc_run(void *\f[I]state\f[], size_t \f[I]len\f[], psc_init \f[I]init\f[], psc_loop \f[I]loop\f[], psc_fin \f[I]fin\f[], int \f[I]nclient\f[], int \f[I]tick\f[]);
 .SH DESCRIPTION
 .PP
 This library provides only one function for creating multiplayer terminal
@@ -52,13 +52,14 @@ a unique identifier for this player.
 .PP
 \f[I]loop\f[] should return a positive integer to continue to the next loop,
 or a negative integer to end the main game loop.
-\f[I]init\f[] is a pointer to a function which is called after the game loop has
+\f[I]fin\f[] is a pointer to a function which is called after the game loop has
 finished, to clean up any resources allocated by \f[I]init\f[]. This function is
 required to ensure the application can cleanly exit.
-The final argument to \f[B]psc_run()\f[]
+The penultimate argument to \f[B]psc_run()\f[]
 is \f[I]nclients\f[], which indicates
 how many clients will connect to the server: this should be an integer greater than
-zero for the server instance, and zero for any client instances.
+zero for the server instance, and zero for any client instances. The final argument,
+\f[I]tick\f[], is the minimum time for each iteration of the game loop (in milliseconds).
 .SH NOTES
 .PP
 The user-defined \f[I]loop\f[] function can use the \f[I]player_id\f[]
@@ -71,7 +72,7 @@ connections.
 .PP
 The library handles the following terminations of game instances:
 (i) if either server or client(s) exit cleanly (i.e. as determined by the user's \f[I]loop\f[]
-returning negative), then all other instances also exit cleanly; (ii) if a client instance
+function returning negative), then all other instances also exit cleanly; (ii) if a client instance
 disconnects as a result of unexpected exit (see signal handling details below),
 the server will wait for a new client to replace
 the original; (iii) if a server instance disconnects as a result of an unexpected exit, all
