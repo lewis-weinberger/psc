@@ -45,7 +45,7 @@ typedef struct
 static psc_state state;
 static FILE *log;
 static psc_status status;
-static pthread_t *tid;
+static pthread_t *tid, sigthread;
 static int *cfd, sfd;
 static struct sockaddr_un addr;
 const  char socket_path[] = "/tmp/psc_socket";
@@ -58,8 +58,8 @@ static void *emalloc(size_t);
 static void log_error(const char*, const char*);
 static void server_main(psc_init, psc_loop, psc_fin, int, int);
 static void *server_update(void*);
-//static void *signal_handler(void*);
-//static void signal_setup(void);
+static void *signal_handler(void*);
+static int  signal_setup(void);
 static int  sfromc(int, void*, size_t);
 static void socket_connect(void);
 static void socket_init(int);
@@ -158,9 +158,9 @@ static void server_main(psc_init init, psc_loop loop, psc_fin fin,
 		return;
 	}
 
-	/* Signal handling: TODO */
-	signal(SIGPIPE, SIG_IGN);
-	signal(SIGWINCH, SIG_IGN);
+	/* Signal handling */
+	if (signal_setup() < 0)
+		return;
 
 	/* Connect to clients */
 	socket_init(nclient);
@@ -274,9 +274,9 @@ static void client_main(psc_init init, psc_loop loop, psc_fin fin, int tick)
 		return;
 	}
 
-	/* Signal handling: TODO */
-	signal(SIGPIPE, SIG_IGN);
-	signal(SIGWINCH, SIG_IGN);
+	/* Signal handling */
+	if (signal_setup() < 0)
+		return;
 
 	/* Connect to server */
 	socket_connect();
@@ -405,6 +405,68 @@ static void socket_fin(void)
 	close(sfd);
 	unlink(socket_path);
 	log_error("* Server closed", NULL);
+}
+
+static int signal_setup(void)
+{
+	sigset_t set;
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGINT);
+	sigaddset(&set, SIGTERM);
+	sigaddset(&set, SIGQUIT);
+	sigaddset(&set, SIGPIPE);
+	sigaddset(&set, SIGWINCH);
+	if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0)
+	{
+		log_error("sigmask", strerror(errno));
+		return -1;
+	}
+	if (pthread_create(&sigthread, NULL, &signal_handler, (void *)&set) != 0)
+	{
+		log_error("signal handling", strerror(errno));
+		return -1;
+	}
+	return 0;
+}
+
+static void *signal_handler(void *arg)
+{
+	sigset_t *set;
+	siginfo_t info;
+	struct timespec timeout;
+	int sig, quit, exit;
+
+	set = (sigset_t *)arg;
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = 50 * MEGA; /* 50 ms */
+	for (;;)
+	{
+		/* Check for exit or quit from other threads */
+		pthread_mutex_lock(&status.mutex);
+		exit = status.exit;
+		quit = status.quit;
+		pthread_mutex_unlock(&status.mutex);
+		if (quit || exit)
+			break;
+
+		/* Catch signals */
+		sig = sigtimedwait(set, &info, timeout);
+		switch (sig)
+		{
+			case SIGINT:
+			case SIGTERM:
+			case SIGQUIT:
+				pthread_mutex_lock(&status.mutex);
+				status.exit = TRUE;
+				pthread_mutex_unlock(&status.mutex);
+				log_error("Signal interruption", strsignal(sig));
+				break;
+			default:
+				break;
+		}
+	}
+	return 0;
 }
 
 static void *server_update(void *arg)

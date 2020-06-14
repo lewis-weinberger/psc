@@ -13,7 +13,7 @@ This library was created for playing multiplayer games either locally on the sam
 
 ## Installation
 
-The library and example games are written in C for POSIX-compliant operating systems. Apart from a C compiler, the only other dependency (for the example games) is the [ncurses](https://invisible-island.net/ncurses/#downloads) library.
+The library and example games are written in C for POSIX.1-2008 compliant operating systems. Apart from a C compiler, the only other dependency (for the example games) is the [ncurses](https://invisible-island.net/ncurses/#downloads) library.
 
 Edit [config.mk](./config.mk) to suit your system setup, then use the provided [Makefile](./Makefile) to build the library and games:
 
